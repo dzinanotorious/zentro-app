@@ -9,12 +9,12 @@ type BillingCycle = "monthly" | "yearly";
 const planDetails = {
   monthly: {
     label: "Monthly",
-    price: 7.99,
+    price: 9.99,
     billedText: "Billed every month",
   },
   yearly: {
     label: "Yearly",
-    price: 69.99,
+    price: 99.99,
     billedText: "Billed once per year",
   },
 };
@@ -195,7 +195,7 @@ export default function CheckoutPage() {
 
                   <div className="mt-4 flex items-end gap-2">
                     <span className="text-4xl font-black">
-                      €7.99
+                      €9.99
                     </span>
 
                     <span className="pb-1 text-sm text-zinc-600">
@@ -234,7 +234,7 @@ export default function CheckoutPage() {
 
                   <div className="mt-4 flex items-end gap-2">
                     <span className="text-4xl font-black">
-                      €69.99
+                      €99.99
                     </span>
 
                     <span className="pb-1 text-sm text-zinc-600">
