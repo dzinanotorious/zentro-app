@@ -32,6 +32,37 @@ const supabaseAdmin = createClient(
   },
 );
 
+function timestampToIso(timestamp: number | null | undefined) {
+  if (!timestamp) {
+    return null;
+  }
+
+  return new Date(timestamp * 1000).toISOString();
+}
+
+function getBillingPeriod(
+  subscription: Stripe.Subscription,
+): "monthly" | "yearly" | null {
+  const interval =
+    subscription.items.data[0]?.price.recurring?.interval;
+
+  if (interval === "month") {
+    return "monthly";
+  }
+
+  if (interval === "year") {
+    return "yearly";
+  }
+
+  return null;
+}
+
+function getCustomerId(subscription: Stripe.Subscription) {
+  return typeof subscription.customer === "string"
+    ? subscription.customer
+    : subscription.customer.id;
+}
+
 export async function POST(request: Request) {
   if (!webhookSecret) {
     return NextResponse.json(
@@ -82,7 +113,8 @@ export async function POST(request: Request) {
 
   try {
     if (event.type === "checkout.session.completed") {
-      const session = event.data.object as Stripe.Checkout.Session;
+      const session =
+        event.data.object as Stripe.Checkout.Session;
 
       const userId =
         session.client_reference_id ||
@@ -112,23 +144,17 @@ export async function POST(request: Request) {
         const subscription =
           await stripe.subscriptions.retrieve(subscriptionId);
 
-        currentPeriodStart = new Date(
-          subscription.current_period_start * 1000,
-        ).toISOString();
+        const subscriptionItem = subscription.items.data[0];
 
-        currentPeriodEnd = new Date(
-          subscription.current_period_end * 1000,
-        ).toISOString();
+        currentPeriodStart = timestampToIso(
+          subscriptionItem?.current_period_start,
+        );
 
-        const interval =
-          subscription.items.data[0]?.price.recurring?.interval;
+        currentPeriodEnd = timestampToIso(
+          subscriptionItem?.current_period_end,
+        );
 
-        billingPeriod =
-          interval === "year"
-            ? "yearly"
-            : interval === "month"
-              ? "monthly"
-              : null;
+        billingPeriod = getBillingPeriod(subscription);
       }
 
       const { error } = await supabaseAdmin
@@ -143,8 +169,7 @@ export async function POST(request: Request) {
               session.metadata?.billing_cycle ||
               null,
             stripe_customer_id: customerId || null,
-            stripe_subscription_id:
-              subscriptionId || null,
+            stripe_subscription_id: subscriptionId || null,
             current_period_start: currentPeriodStart,
             current_period_end: currentPeriodEnd,
             cancel_at_period_end: false,
@@ -184,8 +209,7 @@ export async function POST(request: Request) {
         subscription.status,
       );
 
-      const interval =
-        subscription.items.data[0]?.price.recurring?.interval;
+      const subscriptionItem = subscription.items.data[0];
 
       const { error } = await supabaseAdmin
         .from("user_subscriptions")
@@ -196,23 +220,15 @@ export async function POST(request: Request) {
             status: isActive
               ? subscription.status
               : "canceled",
-            billing_period:
-              interval === "year"
-                ? "yearly"
-                : interval === "month"
-                  ? "monthly"
-                  : null,
-            stripe_customer_id:
-              typeof subscription.customer === "string"
-                ? subscription.customer
-                : subscription.customer.id,
+            billing_period: getBillingPeriod(subscription),
+            stripe_customer_id: getCustomerId(subscription),
             stripe_subscription_id: subscription.id,
-            current_period_start: new Date(
-              subscription.current_period_start * 1000,
-            ).toISOString(),
-            current_period_end: new Date(
-              subscription.current_period_end * 1000,
-            ).toISOString(),
+            current_period_start: timestampToIso(
+              subscriptionItem?.current_period_start,
+            ),
+            current_period_end: timestampToIso(
+              subscriptionItem?.current_period_end,
+            ),
             cancel_at_period_end:
               subscription.cancel_at_period_end,
             updated_at: new Date().toISOString(),
