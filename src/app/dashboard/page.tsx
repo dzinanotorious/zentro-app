@@ -29,6 +29,26 @@ type AIUsage = {
   food_scans_used: number;
 };
 
+type NutritionLog = {
+  log_date: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+};
+
+type MealSummary = {
+  id: string;
+  completed: boolean;
+};
+
+type LatestFoodScan = {
+  id: string;
+  meal_name: string;
+  total_calories: number;
+  scanned_at: string;
+};
+
 const navigation = [
     {
       label: "Dashboard",
@@ -76,6 +96,50 @@ const weekDays = [
   { day: "Sat", completed: false },
   { day: "Sun", completed: false },
 ];
+
+function getLocalDateString(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function formatRelativeTime(value: string) {
+  const difference = Date.now() - new Date(value).getTime();
+  const minutes = Math.max(1, Math.round(difference / 60000));
+
+  if (minutes < 60) {
+    return `${minutes} min ago`;
+  }
+
+  const hours = Math.round(minutes / 60);
+
+  if (hours < 24) {
+    return `${hours} h ago`;
+  }
+
+  const days = Math.round(hours / 24);
+  return `${days} d ago`;
+}
+
+function calculateNutritionStreak(logs: NutritionLog[]) {
+  const loggedDates = new Set(
+    logs
+      .filter((log) => Number(log.calories) > 0)
+      .map((log) => log.log_date),
+  );
+
+  let streak = 0;
+  const current = new Date();
+
+  while (loggedDates.has(getLocalDateString(current))) {
+    streak += 1;
+    current.setDate(current.getDate() - 1);
+  }
+
+  return streak;
+}
 
 function getGoalName(goal?: string | null) {
   if (goal === "gain") return "Muscle Gain";
@@ -132,6 +196,14 @@ export default function DashboardPage() {
     coach_messages_used: 0,
     food_scans_used: 0,
   });
+  const [nutritionLog, setNutritionLog] =
+    useState<NutritionLog | null>(null);
+  const [weeklyNutritionLogs, setWeeklyNutritionLogs] = useState<
+    NutritionLog[]
+  >([]);
+  const [todayMeals, setTodayMeals] = useState<MealSummary[]>([]);
+  const [latestFoodScan, setLatestFoodScan] =
+    useState<LatestFoodScan | null>(null);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -149,11 +221,18 @@ export default function DashboardPage() {
 
       setEmail(user.email ?? "");
 
-      const today = new Date().toISOString().slice(0, 10);
+      const today = getLocalDateString(new Date());
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+      const thirtyDaysAgoString = getLocalDateString(thirtyDaysAgo);
 
       const [
         { data: profileData, error: profileError },
         { data: usageData, error: usageError },
+        { data: nutritionData, error: nutritionError },
+        { data: mealsData, error: mealsError },
+        { data: recentNutritionData, error: recentNutritionError },
+        { data: latestScanData, error: latestScanError },
       ] = await Promise.all([
         supabase
           .from("profiles")
@@ -166,6 +245,39 @@ export default function DashboardPage() {
           .select("coach_messages_used, food_scans_used")
           .eq("user_id", user.id)
           .eq("date", today)
+          .maybeSingle(),
+
+        supabase
+          .from("nutrition_logs")
+          .select("log_date, calories, protein, carbs, fats")
+          .eq("user_id", user.id)
+          .eq("log_date", today)
+          .maybeSingle(),
+
+        supabase
+          .from("meals")
+          .select("id, completed")
+          .eq("user_id", user.id)
+          .eq("meal_date", today),
+
+        supabase
+          .from("nutrition_logs")
+          .select("log_date, calories, protein, carbs, fats")
+          .eq("user_id", user.id)
+          .gte("log_date", thirtyDaysAgoString)
+          .lte("log_date", today)
+          .order("log_date", {
+            ascending: true,
+          }),
+
+        supabase
+          .from("food_scan_history")
+          .select("id, meal_name, total_calories, scanned_at")
+          .eq("user_id", user.id)
+          .order("scanned_at", {
+            ascending: false,
+          })
+          .limit(1)
           .maybeSingle(),
       ]);
 
@@ -181,6 +293,28 @@ export default function DashboardPage() {
         console.error("Could not load AI usage:", usageError);
       }
 
+      if (nutritionError) {
+        console.error("Could not load nutrition log:", nutritionError);
+      }
+
+      if (mealsError) {
+        console.error("Could not load today's meals:", mealsError);
+      }
+
+      if (recentNutritionError) {
+        console.error(
+          "Could not load weekly nutrition:",
+          recentNutritionError,
+        );
+      }
+
+      if (latestScanError) {
+        console.error(
+          "Could not load latest food scan:",
+          latestScanError,
+        );
+      }
+
       if (!profileData?.onboarding_completed) {
         router.replace("/onboarding");
         return;
@@ -193,6 +327,22 @@ export default function DashboardPage() {
         food_scans_used:
           usageData?.food_scans_used ?? 0,
       });
+      setNutritionLog(
+        nutritionData
+          ? (nutritionData as NutritionLog)
+          : null,
+      );
+      setTodayMeals(
+        (mealsData ?? []) as MealSummary[],
+      );
+      setWeeklyNutritionLogs(
+        (recentNutritionData ?? []) as NutritionLog[],
+      );
+      setLatestFoodScan(
+        latestScanData
+          ? (latestScanData as LatestFoodScan)
+          : null,
+      );
       setLoading(false);
     }
 
@@ -204,10 +354,60 @@ export default function DashboardPage() {
   const carbsTarget = profile?.carbs_grams ?? 0;
   const fatTarget = profile?.fat_grams ?? 0;
 
-  const consumedCalories = Math.round(calorieTarget * 0.68);
-  const consumedProtein = Math.round(proteinTarget * 0.74);
-  const consumedCarbs = Math.round(carbsTarget * 0.61);
-  const consumedFat = Math.round(fatTarget * 0.67);
+  const consumedCalories = Math.round(
+    Number(nutritionLog?.calories ?? 0),
+  );
+  const consumedProtein = Math.round(
+    Number(nutritionLog?.protein ?? 0),
+  );
+  const consumedCarbs = Math.round(
+    Number(nutritionLog?.carbs ?? 0),
+  );
+  const consumedFat = Math.round(
+    Number(nutritionLog?.fats ?? 0),
+  );
+
+  const completedMealsToday = todayMeals.filter(
+    (meal) => meal.completed,
+  ).length;
+
+  const nutritionStreak = useMemo(
+    () => calculateNutritionStreak(weeklyNutritionLogs),
+    [weeklyNutritionLogs],
+  );
+
+  const lastSevenDays = useMemo(() => {
+    const byDate = new Map(
+      weeklyNutritionLogs.map((log) => [
+        log.log_date,
+        log,
+      ]),
+    );
+
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - index));
+
+      const dateKey = getLocalDateString(date);
+      const log = byDate.get(dateKey);
+
+      return {
+        dateKey,
+        label: new Intl.DateTimeFormat("en", {
+          weekday: "short",
+        }).format(date),
+        calories: Math.round(
+          Number(log?.calories ?? 0),
+        ),
+      };
+    });
+  }, [weeklyNutritionLogs]);
+
+  const maximumWeeklyCalories = Math.max(
+    calorieTarget,
+    ...lastSevenDays.map((day) => day.calories),
+    1,
+  );
 
   const caloriePercentage = useMemo(() => {
     if (!calorieTarget) return 0;
@@ -820,7 +1020,7 @@ export default function DashboardPage() {
                   </div>
 
                   <Link
-                    href="/nutrition"
+                    href="/nutrition/tracker"
                     className="text-sm font-bold text-purple-400 transition hover:text-purple-300"
                   >
                     Open nutrition →
@@ -905,6 +1105,164 @@ export default function DashboardPage() {
                 >
                   Manage profile
                 </Link>
+              </article>
+            </section>
+
+            {/* Real nutrition insights */}
+            <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_0.85fr]">
+              <article className="rounded-[32px] border border-white/[0.07] bg-[#0b0b10]/90 p-6 sm:p-8">
+                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                  <div>
+                    <p className="text-sm text-zinc-500">
+                      Last 7 days
+                    </p>
+
+                    <h2 className="mt-2 text-2xl font-black">
+                      Calorie activity
+                    </h2>
+                  </div>
+
+                  <Link
+                    href="/nutrition/tracker"
+                    className="text-sm font-bold text-purple-400 transition hover:text-purple-300"
+                  >
+                    Open tracker →
+                  </Link>
+                </div>
+
+                <div className="mt-8 flex h-48 items-end gap-3">
+                  {lastSevenDays.map((day) => {
+                    const height = Math.max(
+                      6,
+                      Math.round(
+                        (day.calories /
+                          maximumWeeklyCalories) *
+                          100,
+                      ),
+                    );
+
+                    return (
+                      <div
+                        key={day.dateKey}
+                        className="flex min-w-0 flex-1 flex-col items-center gap-3"
+                      >
+                        <div className="flex h-36 w-full items-end rounded-2xl bg-white/[0.025] p-1.5">
+                          <div
+                            className="w-full rounded-xl bg-gradient-to-t from-purple-600 to-violet-400 transition-all duration-500"
+                            style={{
+                              height: `${height}%`,
+                            }}
+                          />
+                        </div>
+
+                        <div className="text-center">
+                          <p className="text-[10px] font-bold text-zinc-500">
+                            {day.label}
+                          </p>
+
+                          <p className="mt-1 text-[9px] text-zinc-700">
+                            {day.calories}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </article>
+
+              <article className="rounded-[32px] border border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.06] to-[#0b0b10] p-6 sm:p-8">
+                <div className="flex items-start justify-between gap-5">
+                  <div>
+                    <p className="text-xs font-bold tracking-[0.18em] text-emerald-400">
+                      TODAY&apos;S PROGRESS
+                    </p>
+
+                    <h2 className="mt-3 text-2xl font-black">
+                      Real nutrition stats
+                    </h2>
+                  </div>
+
+                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-bold text-emerald-300">
+                    LIVE
+                  </span>
+                </div>
+
+                <div className="mt-7 grid grid-cols-2 gap-3">
+                  <DashboardStat
+                    label="Meals logged"
+                    value={`${todayMeals.length}`}
+                  />
+
+                  <DashboardStat
+                    label="Completed"
+                    value={`${completedMealsToday}`}
+                  />
+
+                  <DashboardStat
+                    label="Calories left"
+                    value={`${Math.max(
+                      calorieTarget - consumedCalories,
+                      0,
+                    )} kcal`}
+                  />
+
+                  <DashboardStat
+                    label="Nutrition streak"
+                    value={`${nutritionStreak} days`}
+                  />
+                </div>
+
+                <div className="mt-6 border-t border-white/[0.06] pt-6">
+                  {latestFoodScan ? (
+                    <Link
+                      href="/nutrition/history"
+                      className="group block rounded-2xl border border-white/[0.06] bg-black/20 p-5 transition hover:border-emerald-500/20"
+                    >
+                      <p className="text-xs font-bold tracking-[0.14em] text-zinc-600">
+                        LATEST AI FOOD SCAN
+                      </p>
+
+                      <div className="mt-3 flex items-end justify-between gap-5">
+                        <div>
+                          <p className="text-lg font-black">
+                            {latestFoodScan.meal_name}
+                          </p>
+
+                          <p className="mt-2 text-xs text-zinc-600">
+                            {formatRelativeTime(
+                              latestFoodScan.scanned_at,
+                            )}
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <p className="text-xl font-black text-emerald-300">
+                            {Math.round(
+                              Number(
+                                latestFoodScan.total_calories,
+                              ),
+                            )}
+                          </p>
+
+                          <p className="text-xs text-zinc-600">
+                            kcal
+                          </p>
+                        </div>
+                      </div>
+
+                      <p className="mt-4 text-sm font-bold text-emerald-400 transition group-hover:translate-x-1">
+                        View details →
+                      </p>
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/nutrition/scan"
+                      className="block rounded-2xl border border-dashed border-white/[0.08] p-5 text-center text-sm font-bold text-purple-400"
+                    >
+                      Scan your first meal →
+                    </Link>
+                  )}
+                </div>
               </article>
             </section>
 
@@ -1018,7 +1376,7 @@ export default function DashboardPage() {
                 />
 
                 <QuickAction
-                  href="/nutrition"
+                  href="/nutrition/tracker"
                   icon="◎"
                   title="Nutrition plan"
                   description="View meals and daily macro targets."
@@ -1068,6 +1426,26 @@ export default function DashboardPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+function DashboardStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/[0.06] bg-black/20 p-4">
+      <p className="text-[10px] text-zinc-600">
+        {label}
+      </p>
+
+      <p className="mt-2 text-lg font-black">
+        {value}
+      </p>
+    </div>
   );
 }
 
