@@ -23,6 +23,69 @@ const defaultPreferences: NotificationPreferences = {
   timezone: "Europe/Skopje",
 };
 
+function urlBase64ToUint8Array(
+  base64String: string,
+) {
+  const padding = "=".repeat(
+    (4 - (base64String.length % 4)) % 4,
+  );
+
+  const base64 = (
+    base64String + padding
+  )
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
+
+  const rawData = window.atob(base64);
+
+  return Uint8Array.from(
+    [...rawData].map((character) =>
+      character.charCodeAt(0),
+    ),
+  );
+}
+
+async function getPushSubscription() {
+  if (!("serviceWorker" in navigator)) {
+    throw new Error(
+      "This browser does not support service workers.",
+    );
+  }
+
+  if (!("PushManager" in window)) {
+    throw new Error(
+      "This browser does not support push notifications.",
+    );
+  }
+
+  const registration =
+    await navigator.serviceWorker.ready;
+
+  const existingSubscription =
+    await registration.pushManager.getSubscription();
+
+  if (existingSubscription) {
+    return existingSubscription;
+  }
+
+  const vapidPublicKey =
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
+  if (!vapidPublicKey) {
+    throw new Error(
+      "Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY.",
+    );
+  }
+
+  return registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey:
+      urlBase64ToUint8Array(
+        vapidPublicKey,
+      ),
+  });
+}
+
 export default function NotificationsPage() {
   const router = useRouter();
 
@@ -35,10 +98,42 @@ export default function NotificationsPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+  const [pushSubscribed, setPushSubscribed] =
+    useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<
     "success" | "error"
   >("success");
+
+  useEffect(() => {
+    async function registerServiceWorker() {
+      if (!("serviceWorker" in navigator)) {
+        return;
+      }
+
+      try {
+        await navigator.serviceWorker.register(
+          "/sw.js",
+        );
+
+        const registration =
+          await navigator.serviceWorker.ready;
+
+        const subscription =
+          await registration.pushManager.getSubscription();
+
+        setPushSubscribed(Boolean(subscription));
+      } catch (error) {
+        console.error(
+          "Service worker registration error:",
+          error,
+        );
+      }
+    }
+
+    void registerServiceWorker();
+  }, []);
 
   useEffect(() => {
     async function loadPreferences() {
@@ -102,6 +197,71 @@ export default function NotificationsPage() {
     void loadPreferences();
   }, [router]);
 
+  async function savePushSubscription(
+    subscription: PushSubscription,
+  ) {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError || !session?.access_token) {
+      throw new Error(
+        "Your login session is invalid or expired.",
+      );
+    }
+
+    const response = await fetch(
+      "/api/push/subscribe",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(
+          subscription.toJSON(),
+        ),
+      },
+    );
+
+    const contentType =
+      response.headers.get("content-type") ?? "";
+
+    const result = contentType.includes(
+      "application/json",
+    )
+      ? await response.json()
+      : {
+          error: `Server error (${response.status}).`,
+        };
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ||
+          "Could not save push subscription.",
+      );
+    }
+  }
+
+  async function subscribeToPushNotifications() {
+    setSubscribing(true);
+
+    try {
+      const subscription =
+        await getPushSubscription();
+
+      await savePushSubscription(subscription);
+
+      setPushSubscribed(true);
+
+      return subscription;
+    } finally {
+      setSubscribing(false);
+    }
+  }
+
   async function requestNotificationPermission() {
     setMessage("");
 
@@ -118,17 +278,34 @@ export default function NotificationsPage() {
     setBrowserPermission(permission);
 
     if (permission === "granted") {
-      setPreferences((current) => ({
-        ...current,
-        notifications_enabled: true,
-      }));
+      try {
+        await subscribeToPushNotifications();
 
-      setMessageType("success");
-      setMessage(
-        "Нотификациите се дозволени. Сега зачувај ги поставките.",
-      );
+        setPreferences((current) => ({
+          ...current,
+          notifications_enabled: true,
+        }));
 
-      await showTestNotification();
+        setMessageType("success");
+        setMessage(
+          "Push notifications are enabled and connected successfully.",
+        );
+
+        await showTestNotification();
+      } catch (error) {
+        setPreferences((current) => ({
+          ...current,
+          notifications_enabled: false,
+        }));
+
+        setMessageType("error");
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "Could not enable push notifications.",
+        );
+      }
+
       return;
     }
 
@@ -159,9 +336,12 @@ export default function NotificationsPage() {
     if (registration) {
       await registration.showNotification("Zentro Motivation", {
         body: "Секој голем резултат започнува со една мала одлука.",
-        icon: "/favicon.ico",
-        badge: "/favicon.ico",
+        icon: "/icon-192.png",
+        badge: "/icon-192.png",
         tag: "zentro-test-notification",
+        data: {
+          url: "/dashboard",
+        },
       });
 
       return;
@@ -169,7 +349,7 @@ export default function NotificationsPage() {
 
     new Notification("Zentro Motivation", {
       body: "Секој голем резултат започнува со една мала одлука.",
-      icon: "/favicon.ico",
+      icon: "/icon-192.png",
     });
   }
 
@@ -179,9 +359,28 @@ export default function NotificationsPage() {
     setSaving(true);
     setMessage("");
 
-    const notificationsEnabled =
+    let notificationsEnabled =
       preferences.notifications_enabled &&
       browserPermission === "granted";
+
+    if (
+      notificationsEnabled &&
+      !pushSubscribed
+    ) {
+      try {
+        await subscribeToPushNotifications();
+        notificationsEnabled = true;
+      } catch (error) {
+        setMessageType("error");
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : "Could not connect push notifications.",
+        );
+        setSaving(false);
+        return;
+      }
+    }
 
     const { error } = await supabase
       .from("notification_preferences")
@@ -312,15 +511,46 @@ export default function NotificationsPage() {
 
               <button
                 type="button"
-                onClick={() =>
-                  void requestNotificationPermission()
+                onClick={() => {
+                  if (
+                    browserPermission === "granted"
+                  ) {
+                    void subscribeToPushNotifications()
+                      .then(() => {
+                        setMessageType("success");
+                        setMessage(
+                          "Push notifications connected successfully.",
+                        );
+                      })
+                      .catch((error) => {
+                        setMessageType("error");
+                        setMessage(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not connect push notifications.",
+                        );
+                      });
+
+                    return;
+                  }
+
+                  void requestNotificationPermission();
+                }}
+                disabled={
+                  subscribing ||
+                  (browserPermission === "granted" &&
+                    pushSubscribed)
                 }
-                disabled={browserPermission === "granted"}
                 className="mt-7 w-full rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-6 py-4 font-bold disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {browserPermission === "granted"
-                  ? "Notifications allowed ✓"
-                  : "Allow notifications"}
+                {subscribing
+                  ? "Connecting push notifications..."
+                  : browserPermission === "granted" &&
+                      pushSubscribed
+                    ? "Push notifications connected ✓"
+                    : browserPermission === "granted"
+                      ? "Connect push notifications"
+                      : "Allow notifications"}
               </button>
 
               {browserPermission === "denied" && (
@@ -505,6 +735,15 @@ export default function NotificationsPage() {
                 />
 
                 <InfoRow
+                  label="Push subscription"
+                  value={
+                    pushSubscribed
+                      ? "Connected"
+                      : "Not connected"
+                  }
+                />
+
+                <InfoRow
                   label="Daily motivation"
                   value={
                     preferences.motivational_notifications
@@ -531,10 +770,10 @@ export default function NotificationsPage() {
               </p>
 
               <p className="mt-4 text-sm leading-7 text-zinc-600">
-                Оваа страница ја поставува дозволата и корисничките
-                preferences. Во следниот чекор ќе додадеме service
-                worker и push subscription за пораките да пристигнуваат
-                и кога Zentro не е отворен.
+                Browser permission, service worker registration and
+                push subscription are now connected. The next step is
+                adding a secure server sender and scheduled delivery for
+                workout, nutrition and streak reminders.
               </p>
             </article>
           </aside>
