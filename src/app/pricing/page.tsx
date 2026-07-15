@@ -19,7 +19,7 @@ const plans = [
   },
   {
     name: "Zentro Pro",
-    price: "€7.99",
+    price: "€9.99",
     description: "Complete fitness experience.",
     features: [
       "Unlimited workouts",

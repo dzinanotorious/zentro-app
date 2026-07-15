@@ -548,7 +548,7 @@ export default function CoachPage() {
             </div>
 
             <p className="mt-5 text-xs text-zinc-700">
-              Zentro Pro starts at €7.99 per month.
+              Zentro Pro starts at €9.99 per month.
             </p>
           </div>
         </section>
