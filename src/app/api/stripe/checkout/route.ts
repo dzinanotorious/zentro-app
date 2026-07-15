@@ -19,7 +19,8 @@ type CheckoutRequest = {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as CheckoutRequest;
+    const body =
+      (await request.json()) as CheckoutRequest;
 
     const billingCycle = body.billingCycle;
 
@@ -54,46 +55,56 @@ export async function POST(request: Request) {
     }
 
     const origin =
-      request.headers.get("origin") ??
-      process.env.NEXT_PUBLIC_APP_URL ??
+      process.env.NEXT_PUBLIC_APP_URL ||
+      request.headers.get("origin") ||
       "http://localhost:3000";
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
+    const session =
+      await stripe.checkout.sessions.create({
+        mode: "subscription",
 
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
 
-      success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/checkout`,
+        success_url:
+          `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
 
-      customer_email: body.userEmail || undefined,
+        cancel_url:
+          `${origin}/checkout`,
 
-      client_reference_id: body.userId || undefined,
+        customer_email:
+          body.userEmail || undefined,
 
-      metadata: {
-        user_id: body.userId ?? "",
-        billing_cycle: billingCycle,
-      },
+        client_reference_id:
+          body.userId || undefined,
 
-      subscription_data: {
         metadata: {
           user_id: body.userId ?? "",
           billing_cycle: billingCycle,
         },
-      },
 
-      allow_promotion_codes: true,
-    });
+        subscription_data: {
+          metadata: {
+            user_id: body.userId ?? "",
+            billing_cycle: billingCycle,
+          },
+        },
+
+        allow_promotion_codes: true,
+
+        billing_address_collection:
+          "auto",
+      });
 
     if (!session.url) {
       return NextResponse.json(
         {
-          error: "Stripe did not return a checkout URL.",
+          error:
+            "Stripe did not return a checkout URL.",
         },
         {
           status: 500,
@@ -105,7 +116,10 @@ export async function POST(request: Request) {
       url: session.url,
     });
   } catch (error) {
-    console.error("Stripe Checkout error:", error);
+    console.error(
+      "Stripe Checkout error:",
+      error,
+    );
 
     return NextResponse.json(
       {
@@ -120,4 +134,3 @@ export async function POST(request: Request) {
     );
   }
 }
-    
