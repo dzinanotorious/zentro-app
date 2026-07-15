@@ -24,6 +24,11 @@ type Profile = {
   onboarding_completed: boolean | null;
 };
 
+type AIUsage = {
+  coach_messages_used: number;
+  food_scans_used: number;
+};
+
 const navigation = [
     {
       label: "Dashboard",
@@ -123,6 +128,10 @@ export default function DashboardPage() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [aiUsage, setAiUsage] = useState<AIUsage>({
+    coach_messages_used: 0,
+    food_scans_used: 0,
+  });
 
   useEffect(() => {
     async function loadDashboard() {
@@ -140,13 +149,27 @@ export default function DashboardPage() {
 
       setEmail(user.email ?? "");
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
+      const today = new Date().toISOString().slice(0, 10);
 
-      if (error) {
+      const [
+        { data: profileData, error: profileError },
+        { data: usageData, error: usageError },
+      ] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle(),
+
+        supabase
+          .from("user_ai_usage")
+          .select("coach_messages_used, food_scans_used")
+          .eq("user_id", user.id)
+          .eq("date", today)
+          .maybeSingle(),
+      ]);
+
+      if (profileError) {
         setErrorMessage(
           "Не можевме да ги вчитаме твоите податоци. Обиди се повторно.",
         );
@@ -154,12 +177,22 @@ export default function DashboardPage() {
         return;
       }
 
-      if (!data?.onboarding_completed) {
+      if (usageError) {
+        console.error("Could not load AI usage:", usageError);
+      }
+
+      if (!profileData?.onboarding_completed) {
         router.replace("/onboarding");
         return;
       }
 
-      setProfile(data as Profile);
+      setProfile(profileData as Profile);
+      setAiUsage({
+        coach_messages_used:
+          usageData?.coach_messages_used ?? 0,
+        food_scans_used:
+          usageData?.food_scans_used ?? 0,
+      });
       setLoading(false);
     }
 
@@ -184,6 +217,16 @@ export default function DashboardPage() {
       Math.round((consumedCalories / calorieTarget) * 100),
     );
   }, [calorieTarget, consumedCalories]);
+
+  const coachMessagesRemaining = Math.max(
+    15 - aiUsage.coach_messages_used,
+    0,
+  );
+
+  const foodScansRemaining = Math.max(
+    2 - aiUsage.food_scans_used,
+    0,
+  );
 
   const completedWorkouts = weekDays.filter(
     (item) => item.completed,
@@ -865,6 +908,95 @@ export default function DashboardPage() {
               </article>
             </section>
 
+            {/* AI usage and meal scanner */}
+            <section className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+              <article className="rounded-[32px] border border-purple-500/20 bg-gradient-to-br from-purple-600/15 via-purple-950/10 to-[#0b0b10] p-6 sm:p-8">
+                <div className="flex items-start justify-between gap-5">
+                  <div>
+                    <p className="text-xs font-bold tracking-[0.18em] text-purple-400">
+                      ZENTRO PRO AI
+                    </p>
+
+                    <h2 className="mt-3 text-2xl font-black">
+                      Daily AI allowance
+                    </h2>
+
+                    <p className="mt-3 text-sm leading-6 text-zinc-500">
+                      Your limits reset automatically every day.
+                    </p>
+                  </div>
+
+                  <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-3 py-1.5 text-[10px] font-bold text-purple-300">
+                    PRO
+                  </span>
+                </div>
+
+                <div className="mt-7 grid gap-4 sm:grid-cols-2">
+                  <AIUsageCard
+                    label="AI Coach"
+                    used={aiUsage.coach_messages_used}
+                    limit={15}
+                    remaining={coachMessagesRemaining}
+                    href="/coach"
+                    icon="✦"
+                  />
+
+                  <AIUsageCard
+                    label="Food scans"
+                    used={aiUsage.food_scans_used}
+                    limit={2}
+                    remaining={foodScansRemaining}
+                    href="/nutrition/scan"
+                    icon="◎"
+                  />
+                </div>
+              </article>
+
+              <Link
+                href="/nutrition/scan"
+                className="group relative overflow-hidden rounded-[32px] border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-[#0b0b10] to-[#0b0b10] p-6 transition hover:-translate-y-1 hover:border-emerald-400/35 sm:p-8"
+              >
+                <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-emerald-500/10 blur-[70px]" />
+
+                <div className="relative flex h-full flex-col justify-between gap-8">
+                  <div className="flex items-start justify-between gap-5">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-500/20 bg-emerald-500/10 text-2xl text-emerald-300">
+                      ◉
+                    </div>
+
+                    <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-3 py-1.5 text-[10px] font-bold text-purple-300">
+                      AI POWERED
+                    </span>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-bold tracking-[0.18em] text-emerald-400">
+                      SMART NUTRITION
+                    </p>
+
+                    <h2 className="mt-3 text-3xl font-black">
+                      Scan your meal
+                    </h2>
+
+                    <p className="mt-4 max-w-xl leading-7 text-zinc-500">
+                      Take a photo of your food and get an instant estimate
+                      of calories, protein, carbs, fats and ingredients.
+                    </p>
+
+                    <div className="mt-6 flex items-center justify-between gap-4">
+                      <span className="text-sm font-bold text-emerald-300">
+                        {foodScansRemaining}/2 scans remaining today
+                      </span>
+
+                      <span className="text-sm font-bold text-white transition group-hover:translate-x-1">
+                        Open scanner →
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            </section>
+
             {/* Quick actions */}
             <section className="mt-6">
               <div className="mb-5">
@@ -877,7 +1009,7 @@ export default function DashboardPage() {
                 </h2>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <QuickAction
                   href="/programs"
                   icon="◈"
@@ -906,6 +1038,14 @@ export default function DashboardPage() {
                   description="Get guidance based on your goal."
                   pro
                 />
+
+                <QuickAction
+                  href="/nutrition/scan"
+                  icon="◉"
+                  title="Scan your meal"
+                  description="Estimate calories and macros from a photo."
+                  pro
+                />
               </div>
             </section>
 
@@ -920,6 +1060,59 @@ export default function DashboardPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+type AIUsageCardProps = {
+  label: string;
+  used: number;
+  limit: number;
+  remaining: number;
+  href: string;
+  icon: string;
+};
+
+function AIUsageCard({
+  label,
+  used,
+  limit,
+  remaining,
+  href,
+  icon,
+}: AIUsageCardProps) {
+  const percentage = Math.min(
+    100,
+    Math.round((used / Math.max(limit, 1)) * 100),
+  );
+
+  return (
+    <Link
+      href={href}
+      className="rounded-3xl border border-white/[0.07] bg-black/20 p-5 transition hover:border-purple-500/30 hover:bg-purple-500/[0.04]"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/10 font-black text-purple-300">
+          {icon}
+        </div>
+
+        <span className="text-xs font-bold text-zinc-500">
+          {remaining} left
+        </span>
+      </div>
+
+      <p className="mt-5 font-bold">{label}</p>
+
+      <p className="mt-2 text-sm text-zinc-600">
+        {used}/{limit} used today
+      </p>
+
+      <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-purple-600 to-violet-400"
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+    </Link>
   );
 }
 
