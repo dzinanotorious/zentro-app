@@ -49,6 +49,13 @@ type AnalyzeFoodRequest = {
   imageDataUrl?: string;
 };
 
+type UsageResult = {
+  allowed: boolean;
+  used: number;
+  daily_limit: number;
+  remaining: number;
+};
+
 const allowedImagePrefixes = [
   "data:image/jpeg;base64,",
   "data:image/jpg;base64,",
@@ -161,7 +168,75 @@ export async function POST(request: Request) {
     }
 
     /*
-     * 3. Validate the uploaded image.
+     * 3. Atomically consume one daily AI food scan.
+     */
+    const {
+      data: usageData,
+      error: usageError,
+    } = await supabaseAdmin.rpc(
+      "consume_ai_usage",
+      {
+        p_user_id: user.id,
+        p_usage_type: "food_scan",
+        p_daily_limit: 2,
+      },
+    );
+
+    if (usageError) {
+      console.error(
+        "Food scanner usage error:",
+        usageError,
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Could not verify your daily food scanner limit.",
+        },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    const usage = (
+      Array.isArray(usageData)
+        ? usageData[0]
+        : usageData
+    ) as UsageResult | null;
+
+    if (!usage) {
+      return NextResponse.json(
+        {
+          error:
+            "Could not read your food scanner usage.",
+        },
+        {
+          status: 500,
+        },
+      );
+    }
+
+    if (!usage.allowed) {
+      return NextResponse.json(
+        {
+          error:
+            "You have reached your daily limit of 2 AI food scans. Your limit resets tomorrow.",
+          code: "DAILY_LIMIT_REACHED",
+          usage: {
+            used: usage.used,
+            limit: usage.daily_limit,
+            remaining: usage.remaining,
+          },
+        },
+        {
+          status: 429,
+        },
+      );
+    }
+
+    /*
+     * 4. Validate the uploaded image.
      */
     const body =
       (await request.json()) as AnalyzeFoodRequest;
@@ -210,7 +285,7 @@ export async function POST(request: Request) {
     }
 
     /*
-     * 4. Analyze the meal with an OpenAI vision model.
+     * 5. Analyze the meal with an OpenAI vision model.
      */
     const response = await openai.responses.create({
       model: openaiModel,
@@ -412,6 +487,11 @@ Your task:
     return NextResponse.json({
       success: true,
       analysis,
+      usage: {
+        used: usage.used,
+        limit: usage.daily_limit,
+        remaining: usage.remaining,
+      },
       disclaimer:
         "Nutrition values are estimates based on the visible image. Actual values can vary because portion weight, oils, sauces and ingredients may not be visible.",
     });
