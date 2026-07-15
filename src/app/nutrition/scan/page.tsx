@@ -3,6 +3,12 @@
 import { useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+type Usage = {
+  used: number;
+  limit: number;
+  remaining: number;
+};
+
 export default function NutritionScanPage() {
   const inputRef = useRef<HTMLInputElement | null>(
     null,
@@ -19,6 +25,13 @@ export default function NutritionScanPage() {
 
   const [analysis, setAnalysis] =
     useState<any>(null);
+
+  const [usage, setUsage] =
+    useState<Usage>({
+      used: 0,
+      limit: 2,
+      remaining: 2,
+    });
 
   async function handleFile(
     event: React.ChangeEvent<HTMLInputElement>,
@@ -88,6 +101,10 @@ export default function NutritionScanPage() {
       }
 
       setAnalysis(data.analysis);
+
+      if (data.usage) {
+        setUsage(data.usage);
+      }
     } catch (error) {
       setError(
         error instanceof Error
@@ -102,15 +119,39 @@ export default function NutritionScanPage() {
   return (
     <main className="min-h-screen bg-[#050507] px-6 py-10 text-white">
       <div className="mx-auto max-w-4xl">
-        <h1 className="text-5xl font-black">
-          AI Food Scanner
-        </h1>
+        <div className="rounded-3xl border border-purple-500/20 bg-gradient-to-r from-purple-600/10 to-transparent p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold tracking-[0.2em] text-purple-400">
+                ZENTRO PRO
+              </p>
 
-        <p className="mt-4 text-zinc-500">
-          Take a photo of your meal and
-          Zentro AI will estimate
-          calories and macros.
-        </p>
+              <h1 className="mt-3 text-5xl font-black">
+                AI Food Scanner
+              </h1>
+
+              <p className="mt-4 text-zinc-400">
+                Take a photo of your meal and
+                Zentro AI will estimate
+                calories and macros.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-right">
+              <p className="text-xs text-zinc-500">
+                Remaining today
+              </p>
+
+              <p className="mt-2 text-3xl font-black">
+                {usage.remaining}/{usage.limit}
+              </p>
+
+              <p className="mt-1 text-sm text-zinc-500">
+                scans left
+              </p>
+            </div>
+          </div>
+        </div>
 
         <div className="mt-8 rounded-3xl border border-white/10 bg-[#0b0b10] p-8">
           <input
