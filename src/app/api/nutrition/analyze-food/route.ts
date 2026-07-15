@@ -484,9 +484,53 @@ Your task:
       );
     }
 
+    const {
+      data: savedScan,
+      error: saveError,
+    } = await supabaseAdmin
+      .from("food_scan_history")
+      .insert({
+        user_id: user.id,
+        meal_name: analysis.meal_name,
+        description: analysis.description,
+        total_calories:
+          analysis.total_calories,
+        protein_g:
+          analysis.macros.protein_g,
+        carbohydrates_g:
+          analysis.macros
+            .carbohydrates_g,
+        fat_g:
+          analysis.macros.fat_g,
+        fiber_g:
+          analysis.macros.fiber_g,
+        portion_estimate:
+          analysis.portion_estimate,
+        confidence:
+          analysis.confidence,
+        ingredients:
+          analysis.ingredients,
+        assumptions:
+          analysis.assumptions,
+        warnings:
+          analysis.warnings,
+        scanned_at:
+          new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+
+    if (saveError) {
+      console.error(
+        "Could not save scan:",
+        saveError,
+      );
+    }
+
     return NextResponse.json({
       success: true,
       analysis,
+      scanId: savedScan?.id ?? null,
       usage: {
         used: usage.used,
         limit: usage.daily_limit,
