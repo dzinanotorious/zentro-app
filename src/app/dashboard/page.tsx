@@ -42,7 +42,7 @@ const navigation = [
     },
     {
       label: "Nutrition",
-      href: "/nutrition",
+      href: "/nutrition/history",
       icon: "◎",
     },
     {
@@ -1009,7 +1009,7 @@ export default function DashboardPage() {
                 </h2>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
                 <QuickAction
                   href="/programs"
                   icon="◈"
@@ -1044,6 +1044,14 @@ export default function DashboardPage() {
                   icon="◉"
                   title="Scan your meal"
                   description="Estimate calories and macros from a photo."
+                  pro
+                />
+
+                <QuickAction
+                  href="/nutrition/history"
+                  icon="◌"
+                  title="Nutrition history"
+                  description="View your scanned meals and calorie history."
                   pro
                 />
               </div>
