@@ -5,6 +5,7 @@ import {
   FormEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -25,6 +26,12 @@ type Message = {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+};
+
+type CoachUsage = {
+  used: number;
+  limit: number;
+  remaining: number;
 };
 
 type CoachPreferences = {
@@ -90,6 +97,13 @@ const quickPrompts = [
   },
 ];
 
+function formatMessageDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 function formatConversationDate(value: string) {
   const date = new Date(value);
   const now = new Date();
@@ -130,6 +144,19 @@ export default function CoachPage() {
   const [hasPro, setHasPro] = useState(false);
   const [checkingPlan, setCheckingPlan] = useState(true);
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [renamingConversationId, setRenamingConversationId] = useState<
+    string | null
+  >(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [clearingConversations, setClearingConversations] =
+    useState(false);
+  const [coachUsage, setCoachUsage] = useState<CoachUsage>({
+    used: 0,
+    limit: 15,
+    remaining: 15,
+  });
+
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">(
     "success",
@@ -149,29 +176,42 @@ export default function CoachPage() {
 
       setUserId(user.id);
 
-      const [{ data: conversationData, error }, { data: preferenceData }] =
-        await Promise.all([
-          supabase
-            .from("coach_conversations")
-            .select("id, title, created_at, updated_at")
-            .eq("user_id", user.id)
-            .order("updated_at", {
-              ascending: false,
-            }),
+      const today = new Date().toISOString().slice(0, 10);
 
-          supabase
-            .from("coach_preferences")
-            .select(`
-              coaching_style,
-              response_length,
-              language,
-              include_workout_data,
-              include_nutrition_data,
-              include_progress_data
-            `)
-            .eq("user_id", user.id)
-            .maybeSingle(),
-        ]);
+      const [
+        { data: conversationData, error },
+        { data: preferenceData },
+        { data: usageData, error: usageError },
+      ] = await Promise.all([
+        supabase
+          .from("coach_conversations")
+          .select("id, title, created_at, updated_at")
+          .eq("user_id", user.id)
+          .order("updated_at", {
+            ascending: false,
+          })
+          .limit(100),
+
+        supabase
+          .from("coach_preferences")
+          .select(`
+            coaching_style,
+            response_length,
+            language,
+            include_workout_data,
+            include_nutrition_data,
+            include_progress_data
+          `)
+          .eq("user_id", user.id)
+          .maybeSingle(),
+
+        supabase
+          .from("user_ai_usage")
+          .select("coach_messages_used")
+          .eq("user_id", user.id)
+          .eq("date", today)
+          .maybeSingle(),
+      ]);
 
       if (error) {
         setMessageType("error");
@@ -184,6 +224,20 @@ export default function CoachPage() {
         (conversationData ?? []) as Conversation[];
 
       setConversations(loadedConversations);
+
+      if (usageError) {
+        console.error("Could not load AI Coach usage:", usageError);
+      }
+
+      const usedToday = Number(
+        usageData?.coach_messages_used ?? 0,
+      );
+
+      setCoachUsage({
+        used: usedToday,
+        limit: 15,
+        remaining: Math.max(15 - usedToday, 0),
+      });
 
       if (preferenceData) {
         setPreferences({
@@ -272,6 +326,18 @@ export default function CoachPage() {
     });
   }, [messages, sending]);
 
+  const filteredConversations = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) {
+      return conversations;
+    }
+
+    return conversations.filter((conversation) =>
+      conversation.title.toLowerCase().includes(query),
+    );
+  }, [conversations, searchQuery]);
+
   function createNewChat() {
     setActiveConversationId(null);
     setMessages([]);
@@ -331,11 +397,19 @@ export default function CoachPage() {
         }),
       });
 
-      const result = (await response.json()) as {
-        answer?: string;
-        conversationId?: string;
-        error?: string;
-      };
+      const contentType =
+        response.headers.get("content-type") ?? "";
+
+      const result = contentType.includes("application/json")
+        ? ((await response.json()) as {
+            answer?: string;
+            conversationId?: string;
+            error?: string;
+            usage?: CoachUsage;
+          })
+        : {
+            error: `Server error (${response.status}).`,
+          };
 
       if (!response.ok || !result.answer) {
         throw new Error(
@@ -362,6 +436,16 @@ export default function CoachPage() {
         ...current,
         assistantMessage,
       ]);
+
+      if (result.usage) {
+        setCoachUsage(result.usage);
+      } else {
+        setCoachUsage((current) => ({
+          ...current,
+          used: Math.min(current.limit, current.used + 1),
+          remaining: Math.max(current.remaining - 1, 0),
+        }));
+      }
 
       await loadConversations(false);
     } catch (error) {
@@ -409,6 +493,112 @@ export default function CoachPage() {
     }
 
     await loadConversations(false);
+  }
+
+  async function renameConversation() {
+    if (!renamingConversationId || !userId) return;
+
+    const title = renameValue.trim();
+
+    if (!title) {
+      setMessageType("error");
+      setMessage("Conversation title cannot be empty.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("coach_conversations")
+      .update({
+        title: title.slice(0, 80),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", renamingConversationId)
+      .eq("user_id", userId);
+
+    if (error) {
+      setMessageType("error");
+      setMessage(error.message);
+      return;
+    }
+
+    setRenamingConversationId(null);
+    setRenameValue("");
+    setMessageType("success");
+    setMessage("Conversation renamed.");
+    await loadConversations(false);
+  }
+
+  async function clearAllConversations() {
+    if (!userId || conversations.length === 0) return;
+
+    const confirmed = window.confirm(
+      "Delete all AI Coach conversations? This cannot be undone.",
+    );
+
+    if (!confirmed) return;
+
+    setClearingConversations(true);
+    setMessage("");
+
+    const { error } = await supabase
+      .from("coach_conversations")
+      .delete()
+      .eq("user_id", userId);
+
+    if (error) {
+      setMessageType("error");
+      setMessage(error.message);
+      setClearingConversations(false);
+      return;
+    }
+
+    createNewChat();
+    setConversations([]);
+    setMessageType("success");
+    setMessage("All conversations were deleted.");
+    setClearingConversations(false);
+  }
+
+  function exportConversation() {
+    if (messages.length === 0) return;
+
+    const activeConversation = conversations.find(
+      (conversation) =>
+        conversation.id === activeConversationId,
+    );
+
+    const title =
+      activeConversation?.title || "Zentro AI Coach";
+
+    const content = [
+      title,
+      "=".repeat(title.length),
+      "",
+      ...messages.map(
+        (chatMessage) =>
+          `${chatMessage.role === "user" ? "You" : "Zentro AI"} (${new Date(
+            chatMessage.created_at,
+          ).toLocaleString()}):\n${chatMessage.content}\n`,
+      ),
+    ].join("\n");
+
+    const blob = new Blob([content], {
+      type: "text/plain;charset=utf-8",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `${title
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-|-$/g, "")
+      .toLowerCase() || "zentro-chat"}.txt`;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   async function savePreferences() {
@@ -460,20 +650,6 @@ export default function CoachPage() {
 
           <p className="mt-5 text-sm text-zinc-400">
             Preparing your AI Coach...
-          </p>
-        </div>
-      </main>
-    );
-  }
-
-  if (checkingPlan) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#050507] text-white">
-        <div className="text-center">
-          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
-
-          <p className="mt-5 text-sm text-zinc-400">
-            Checking your Zentro plan...
           </p>
         </div>
       </main>
@@ -597,13 +773,24 @@ export default function CoachPage() {
             + New coaching chat
           </button>
 
+          <div className="mt-4 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-3">
+            <input
+              value={searchQuery}
+              onChange={(event) =>
+                setSearchQuery(event.target.value)
+              }
+              placeholder="Search conversations..."
+              className="w-full bg-transparent px-2 py-2 text-sm outline-none placeholder:text-zinc-700"
+            />
+          </div>
+
           <div className="mt-7">
             <p className="px-2 text-[10px] font-bold tracking-[0.18em] text-zinc-700">
               RECENT CONVERSATIONS
             </p>
 
             <div className="mt-3 max-h-[calc(100vh-300px)] space-y-2 overflow-y-auto pr-1">
-              {conversations.map((conversation) => {
+              {filteredConversations.map((conversation) => {
                 const active =
                   conversation.id === activeConversationId;
 
@@ -637,25 +824,46 @@ export default function CoachPage() {
                       </p>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void deleteConversation(
-                          conversation.id,
-                        )
-                      }
-                      className="mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-zinc-700 opacity-0 transition hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
-                    >
-                      ×
-                    </button>
+                    <div className="mr-2 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                      <button
+                        type="button"
+                        title="Rename conversation"
+                        onClick={() => {
+                          setRenamingConversationId(
+                            conversation.id,
+                          );
+                          setRenameValue(
+                            conversation.title,
+                          );
+                        }}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-zinc-700 transition hover:bg-purple-500/10 hover:text-purple-300"
+                      >
+                        ✎
+                      </button>
+
+                      <button
+                        type="button"
+                        title="Delete conversation"
+                        onClick={() =>
+                          void deleteConversation(
+                            conversation.id,
+                          )
+                        }
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-zinc-700 transition hover:bg-red-500/10 hover:text-red-300"
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
                 );
               })}
 
-              {conversations.length === 0 && (
+              {filteredConversations.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-white/[0.07] p-5 text-center">
                   <p className="text-xs leading-5 text-zinc-700">
-                    Your coaching conversations will appear here.
+                    {searchQuery
+                      ? "No conversations match your search."
+                      : "Your coaching conversations will appear here."}
                   </p>
                 </div>
               )}
@@ -663,6 +871,20 @@ export default function CoachPage() {
           </div>
 
           <div className="absolute bottom-5 left-5 right-5 space-y-2">
+            {conversations.length > 0 && (
+              <button
+                type="button"
+                disabled={clearingConversations}
+                onClick={() =>
+                  void clearAllConversations()
+                }
+                className="w-full rounded-2xl border border-red-500/15 bg-red-500/[0.04] px-4 py-3 text-left text-sm font-bold text-red-300 disabled:opacity-50"
+              >
+                {clearingConversations
+                  ? "Clearing..."
+                  : "Clear all conversations"}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowSettings(true)}
@@ -711,12 +933,26 @@ export default function CoachPage() {
               </div>
             </div>
 
-            <div className="hidden items-center gap-3 sm:flex">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.8)]" />
+            <div className="flex items-center gap-3">
+              {messages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={exportConversation}
+                  className="hidden rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-2 text-xs font-bold text-zinc-400 transition hover:border-purple-500/25 hover:text-white sm:block"
+                >
+                  Export chat
+                </button>
+              )}
 
-              <span className="text-xs font-bold text-zinc-500">
-                Coach online
-              </span>
+              <div className="rounded-2xl border border-purple-500/15 bg-purple-500/[0.06] px-4 py-2 text-right">
+                <p className="text-[9px] font-bold tracking-[0.12em] text-purple-400">
+                  DAILY AI LIMIT
+                </p>
+
+                <p className="mt-1 text-xs font-black">
+                  {coachUsage.remaining}/{coachUsage.limit} left
+                </p>
+              </div>
             </div>
           </header>
 
@@ -830,6 +1066,18 @@ export default function CoachPage() {
                           <div className="whitespace-pre-wrap text-sm leading-7">
                             {chatMessage.content}
                           </div>
+
+                          <p
+                            className={`mt-3 text-[10px] ${
+                              chatMessage.role === "user"
+                                ? "text-white/60"
+                                : "text-zinc-700"
+                            }`}
+                          >
+                            {formatMessageDate(
+                              chatMessage.created_at,
+                            )}
+                          </p>
                         </div>
                       </article>
                     ))}
@@ -897,14 +1145,79 @@ export default function CoachPage() {
                   not replace qualified medical care.
                 </p>
 
-                <p className="shrink-0 text-[10px] text-zinc-700">
-                  {input.length}/4000
-                </p>
+                <div className="flex shrink-0 items-center gap-3">
+                  <p className="text-[10px] text-purple-400">
+                    {coachUsage.remaining} messages left today
+                  </p>
+
+                  <p className="text-[10px] text-zinc-700">
+                    {input.length}/4000
+                  </p>
+                </div>
               </div>
             </form>
           </div>
         </section>
       </div>
+
+      {renamingConversationId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-5 backdrop-blur-md"
+          onClick={() => {
+            setRenamingConversationId(null);
+            setRenameValue("");
+          }}
+        >
+          <section
+            className="w-full max-w-md rounded-[34px] border border-white/10 bg-[#0b0b10] p-7 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="text-xs font-bold tracking-[0.2em] text-purple-400">
+              RENAME CONVERSATION
+            </p>
+
+            <h2 className="mt-3 text-2xl font-black">
+              Update chat title
+            </h2>
+
+            <input
+              autoFocus
+              maxLength={80}
+              value={renameValue}
+              onChange={(event) =>
+                setRenameValue(event.target.value)
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  void renameConversation();
+                }
+              }}
+              className="mt-6 w-full rounded-2xl border border-white/10 bg-black/40 px-5 py-4 outline-none focus:border-purple-500/50"
+            />
+
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setRenamingConversationId(null);
+                  setRenameValue("");
+                }}
+                className="rounded-2xl border border-white/[0.08] px-5 py-4 font-bold text-zinc-400"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void renameConversation()}
+                className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 py-4 font-bold"
+              >
+                Save title
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {showSettings && (
         <div
