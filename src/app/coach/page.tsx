@@ -176,7 +176,11 @@ export default function CoachPage() {
 
       setUserId(user.id);
 
-      const today = new Date().toISOString().slice(0, 10);
+      // Supabase SQL limit functions use current_date in UTC.
+      // Keep the frontend usage lookup on the same UTC date.
+      const today = new Date()
+        .toISOString()
+        .slice(0, 10);
 
       const [
         { data: conversationData, error },
@@ -354,7 +358,16 @@ export default function CoachPage() {
 
     const content = (customPrompt ?? input).trim();
 
-    if (!content || sending) return;
+    if (!content || sending || coachUsage.remaining <= 0) {
+      if (coachUsage.remaining <= 0) {
+        setMessageType("error");
+        setMessage(
+          "Го достигна дневниот лимит од 15 AI Coach пораки. Лимитот се обновува утре.",
+        );
+      }
+
+      return;
+    }
 
     setSending(true);
     setMessage("");
@@ -405,11 +418,16 @@ export default function CoachPage() {
             answer?: string;
             conversationId?: string;
             error?: string;
+            code?: string;
             usage?: CoachUsage;
           })
         : {
             error: `Server error (${response.status}).`,
           };
+
+      if (result.usage) {
+        setCoachUsage(result.usage);
+      }
 
       if (!response.ok || !result.answer) {
         throw new Error(
@@ -437,9 +455,7 @@ export default function CoachPage() {
         assistantMessage,
       ]);
 
-      if (result.usage) {
-        setCoachUsage(result.usage);
-      } else {
+      if (!result.usage) {
         setCoachUsage((current) => ({
           ...current,
           used: Math.min(current.limit, current.used + 1),
@@ -996,14 +1012,17 @@ export default function CoachPage() {
                         <button
                           key={item.title}
                           type="button"
-                          disabled={sending}
+                          disabled={
+                            sending ||
+                            coachUsage.remaining <= 0
+                          }
                           onClick={() =>
                             void sendMessage(
                               undefined,
                               item.prompt,
                             )
                           }
-                          className="group rounded-[28px] border border-white/[0.07] bg-white/[0.025] p-5 transition hover:-translate-y-1 hover:border-purple-500/25 hover:bg-purple-500/[0.05]"
+                          className="group rounded-[28px] border border-white/[0.07] bg-white/[0.025] p-5 transition hover:-translate-y-1 hover:border-purple-500/25 hover:bg-purple-500/[0.05] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
                         >
                           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-500/10 text-xs font-black text-purple-300">
                             {item.icon}
@@ -1126,16 +1145,29 @@ export default function CoachPage() {
                   }}
                   rows={1}
                   maxLength={4000}
-                  placeholder="Ask about your workouts, nutrition, progress or recovery..."
+                  disabled={coachUsage.remaining <= 0}
+                  placeholder={
+                    coachUsage.remaining <= 0
+                      ? "Daily AI Coach limit reached."
+                      : "Ask about your workouts, nutrition, progress or recovery..."
+                  }
                   className="max-h-40 min-h-[48px] flex-1 resize-none bg-transparent px-3 py-3 text-sm leading-6 outline-none placeholder:text-zinc-700"
                 />
 
                 <button
                   type="submit"
-                  disabled={!input.trim() || sending}
+                  disabled={
+                    !input.trim() ||
+                    sending ||
+                    coachUsage.remaining <= 0
+                  }
                   className="flex h-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-35"
                 >
-                  {sending ? "..." : "Send"}
+                  {sending
+                    ? "..."
+                    : coachUsage.remaining <= 0
+                      ? "Limit reached"
+                      : "Send"}
                 </button>
               </div>
 
