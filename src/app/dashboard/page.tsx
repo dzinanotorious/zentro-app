@@ -549,25 +549,26 @@ export default function DashboardPage() {
           </nav>
 
           <div className="mt-auto">
-            <div className="rounded-3xl border border-purple-500/15 bg-gradient-to-br from-purple-600/15 to-transparent p-5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/15 text-purple-300">
+            <Link
+              href="/pricing"
+              className="group block overflow-hidden rounded-3xl border border-purple-500/25 bg-gradient-to-br from-purple-700/30 via-violet-700/20 to-transparent p-5 transition duration-300 hover:scale-[1.02] hover:border-purple-400/40"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/20 text-xl text-purple-300 shadow-[0_0_20px_rgba(139,92,246,0.2)]">
                 ✦
               </div>
 
-              <p className="mt-4 font-bold">Unlock Zentro Pro</p>
+              <h3 className="mt-4 text-lg font-black text-white">
+                Unlock Zentro Pro
+              </h3>
 
-              <p className="mt-2 text-xs leading-6 text-zinc-500">
-                Get AI coaching, advanced plans and deeper progress
-                insights.
+              <p className="mt-2 text-xs leading-6 text-zinc-400">
+                Unlock AI Coach, meal scanner, premium workout plans and advanced progress insights.
               </p>
 
-              <Link
-                href="/pricing"
-                className="mt-5 block rounded-xl bg-purple-600 px-4 py-3 text-center text-xs font-bold transition hover:bg-purple-500"
-              >
-                View plans
-              </Link>
-            </div>
+              <div className="mt-5 rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-4 py-3 text-center text-sm font-bold text-white transition group-hover:from-purple-500 group-hover:to-violet-400">
+                Upgrade now →
+              </div>
+            </Link>
 
             <button
               type="button"
@@ -578,6 +579,7 @@ export default function DashboardPage() {
               {loggingOut ? "Logging out..." : "Log out"}
             </button>
           </div>
+
         </aside>
 
         <div className="w-full lg:pl-72">
