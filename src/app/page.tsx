@@ -21,15 +21,15 @@ const features = [
 export default function Home() {
   return (
     <main className="min-h-screen overflow-hidden bg-[#050507] text-white">
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute left-1/2 top-[-250px] h-[650px] w-[650px] -translate-x-1/2 rounded-full bg-purple-700/25 blur-[140px]" />
-        <div className="absolute -left-40 top-[500px] h-[500px] w-[500px] rounded-full bg-violet-900/20 blur-[150px]" />
-        <div className="absolute -right-52 top-[700px] h-[500px] w-[500px] rounded-full bg-fuchsia-900/15 blur-[150px]" />
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-1/2 top-[-160px] h-[360px] w-[360px] -translate-x-1/2 rounded-full bg-purple-700/20 blur-3xl" />
+        <div className="absolute -left-24 top-[560px] h-[260px] w-[260px] rounded-full bg-violet-900/15 blur-3xl" />
+        <div className="absolute -right-24 top-[820px] h-[260px] w-[260px] rounded-full bg-fuchsia-900/10 blur-3xl" />
       </div>
 
       <nav className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-6 py-7 lg:px-10">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-purple-400/30 bg-purple-500/10 shadow-[0_0_30px_rgba(168,85,247,0.25)]">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-purple-400/30 bg-purple-500/10 shadow-[0_0_18px_rgba(168,85,247,0.18)]">
             <span className="text-xl font-black text-purple-400">Z</span>
           </div>
 
@@ -55,14 +55,14 @@ export default function Home() {
 
         <Link
           href="/login"
-          className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold backdrop-blur transition hover:border-purple-400/50 hover:bg-purple-500/10"
+          className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold transition hover:border-purple-400/50 hover:bg-purple-500/10"
         >
           Sign in
         </Link>
       </nav>
 
       <section className="relative z-10 mx-auto flex max-w-7xl flex-col items-center px-6 pb-24 pt-20 text-center lg:px-10 lg:pt-28">
-        <div className="mb-7 flex items-center gap-2 rounded-full border border-purple-400/20 bg-purple-500/10 px-4 py-2 text-xs font-semibold tracking-[0.18em] text-purple-300 shadow-[0_0_30px_rgba(168,85,247,0.12)]">
+        <div className="mb-7 flex items-center gap-2 rounded-full border border-purple-400/20 bg-purple-500/10 px-4 py-2 text-xs font-semibold tracking-[0.18em] text-purple-300 shadow-[0_0_18px_rgba(168,85,247,0.10)]">
           <span className="h-2 w-2 rounded-full bg-purple-400 shadow-[0_0_10px_rgba(192,132,252,1)]" />
           AI-POWERED FITNESS PLATFORM
         </div>
@@ -82,7 +82,7 @@ export default function Home() {
         <div className="mt-10 flex flex-col gap-4 sm:flex-row">
           <Link
             href="/register"
-            className="group rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-8 py-4 font-bold shadow-[0_0_40px_rgba(139,92,246,0.35)] transition hover:scale-[1.03] hover:shadow-[0_0_55px_rgba(139,92,246,0.5)]"
+            className="group rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-8 py-4 font-bold shadow-[0_0_28px_rgba(139,92,246,0.24)] transition hover:shadow-[0_0_36px_rgba(139,92,246,0.32)]"
           >
             Start Your Journey
             <span className="ml-3 inline-block transition group-hover:translate-x-1">
@@ -92,16 +92,16 @@ export default function Home() {
 
           <Link
             href="/programs"
-            className="rounded-2xl border border-white/10 bg-white/[0.03] px-8 py-4 font-bold text-zinc-200 backdrop-blur transition hover:border-purple-400/40 hover:bg-white/[0.06]"
+            className="rounded-2xl border border-white/10 bg-white/[0.03] px-8 py-4 font-bold text-zinc-200 transition hover:border-purple-400/40 hover:bg-white/[0.06]"
           >
             Explore Programs
           </Link>
         </div>
 
-        <div className="relative mt-20 w-full max-w-5xl">
-          <div className="absolute -inset-1 rounded-[32px] bg-gradient-to-r from-purple-600/40 via-violet-500/20 to-fuchsia-600/40 blur-xl" />
+        <div className="relative mt-16 w-full max-w-5xl sm:mt-20">
+          <div className="absolute -inset-1 rounded-[32px] bg-gradient-to-r from-purple-600/40 via-violet-500/20 to-fuchsia-600/40 blur-lg" />
 
-          <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#0b0b10]/90 p-4 shadow-2xl backdrop-blur-xl">
+          <div className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[#0b0b10]/90 p-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/5 px-3 pb-4">
               <div className="flex gap-2">
                 <span className="h-3 w-3 rounded-full bg-red-400/70" />
@@ -116,7 +116,7 @@ export default function Home() {
               <div className="w-12" />
             </div>
 
-            <div className="grid gap-4 p-2 pt-6 md:grid-cols-[1.2fr_0.8fr]">
+            <div className="grid gap-4 p-1 pt-5 sm:p-2 sm:pt-6 md:grid-cols-[1.2fr_0.8fr]">
               <div className="rounded-3xl border border-white/5 bg-gradient-to-br from-purple-950/60 to-black p-7 text-left">
                 <p className="text-sm text-purple-300">
                   Welcome back, Leon
@@ -126,7 +126,7 @@ export default function Home() {
                   Today&apos;s Progress
                 </h2>
 
-                <div className="mt-8 grid grid-cols-3 gap-3">
+                <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div className="rounded-2xl border border-white/5 bg-white/[0.04] p-4">
                     <p className="text-xs text-zinc-500">Calories</p>
                     <p className="mt-2 text-xl font-bold">1,840</p>
@@ -216,7 +216,7 @@ export default function Home() {
 
       <section
         id="features"
-        className="relative z-10 mx-auto max-w-7xl px-6 py-24 lg:px-10"
+        className="relative z-10 mx-auto max-w-7xl px-6 py-24 [content-visibility:auto] [contain-intrinsic-size:900px] lg:px-10"
       >
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-sm font-bold tracking-[0.2em] text-purple-400">
@@ -237,9 +237,9 @@ export default function Home() {
           {features.map((feature) => (
             <article
               key={feature.title}
-              className="group rounded-3xl border border-white/[0.08] bg-white/[0.025] p-8 backdrop-blur transition duration-300 hover:-translate-y-2 hover:border-purple-500/30 hover:bg-purple-500/[0.05]"
+              className="group rounded-3xl border border-white/[0.08] bg-white/[0.025] p-8 transition duration-300 hover:border-purple-500/30 hover:bg-purple-500/[0.05]"
             >
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-purple-400/20 bg-purple-500/10 text-2xl text-purple-300 shadow-[0_0_25px_rgba(168,85,247,0.12)]">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-purple-400/20 bg-purple-500/10 text-2xl text-purple-300 shadow-[0_0_16px_rgba(168,85,247,0.10)]">
                 {feature.icon}
               </div>
 
