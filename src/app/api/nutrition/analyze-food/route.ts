@@ -4,9 +4,13 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+const DAILY_FOOD_SCAN_LIMIT = 2;
+
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const openaiModel =
-  process.env.OPENAI_MODEL || "gpt-4.1-mini";
+  process.env.OPENAI_FOOD_MODEL ||
+  process.env.OPENAI_MODEL ||
+  "gpt-4.1-mini";
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -52,7 +56,6 @@ type AnalyzeFoodRequest = {
 type UsageResult = {
   allowed: boolean;
   used: number;
-  daily_limit: number;
   remaining: number;
 };
 
@@ -63,30 +66,68 @@ const allowedImagePrefixes = [
   "data:image/webp;base64,",
 ];
 
-function isAllowedImageDataUrl(value: string) {
-  return allowedImagePrefixes.some((prefix) =>
-    value.startsWith(prefix),
+function isAllowedImageDataUrl(
+  value: string,
+) {
+  return allowedImagePrefixes.some(
+    (prefix) => value.startsWith(prefix),
   );
 }
 
-function estimateBase64Bytes(dataUrl: string) {
-  const base64 = dataUrl.split(",")[1] ?? "";
+function estimateBase64Bytes(
+  dataUrl: string,
+) {
+  const base64 =
+    dataUrl.split(",")[1] ?? "";
 
-  return Math.ceil((base64.length * 3) / 4);
+  return Math.ceil(
+    (base64.length * 3) / 4,
+  );
 }
 
-export async function POST(request: Request) {
+function getAccessToken(
+  request: Request,
+) {
+  const authorization =
+    request.headers.get("authorization");
+
+  return authorization?.replace(
+    /^Bearer\s+/i,
+    "",
+  );
+}
+
+async function releaseReservedUsage(
+  userId: string,
+) {
+  const { error } =
+    await supabaseAdmin.rpc(
+      "release_food_scan",
+      {
+        p_user_id: userId,
+      },
+    );
+
+  if (error) {
+    console.error(
+      "Could not release food scan usage:",
+      error,
+    );
+  }
+}
+
+export async function POST(
+  request: Request,
+) {
+  let reservedUserId: string | null =
+    null;
+
   try {
     /*
-     * 1. Verify the logged-in Supabase user.
+     * 1. Verify logged-in user.
      */
-    const authorization =
-      request.headers.get("authorization");
-
-    const accessToken = authorization?.replace(
-      /^Bearer\s+/i,
-      "",
-    );
+    const accessToken =
+      getAccessToken(request);
 
     if (!accessToken) {
       return NextResponse.json(
@@ -103,9 +144,10 @@ export async function POST(request: Request) {
     const {
       data: { user },
       error: userError,
-    } = await supabaseAdmin.auth.getUser(
-      accessToken,
-    );
+    } =
+      await supabaseAdmin.auth.getUser(
+        accessToken,
+      );
 
     if (userError || !user) {
       return NextResponse.json(
@@ -119,8 +161,10 @@ export async function POST(request: Request) {
       );
     }
 
+    const userId = user.id;
+
     /*
-     * 2. Check whether the user has Zentro Pro.
+     * 2. Verify Zentro Pro.
      */
     const {
       data: subscription,
@@ -128,7 +172,7 @@ export async function POST(request: Request) {
     } = await supabaseAdmin
       .from("user_subscriptions")
       .select("plan_code, status")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (subscriptionError) {
@@ -168,24 +212,84 @@ export async function POST(request: Request) {
     }
 
     /*
-     * 3. Atomically consume one daily AI food scan.
+     * 3. Validate image before consuming a credit.
+     */
+    const body =
+      (await request.json()) as AnalyzeFoodRequest;
+
+    const imageDataUrl =
+      body.imageDataUrl?.trim();
+
+    if (!imageDataUrl) {
+      return NextResponse.json(
+        {
+          error:
+            "No food image was provided.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (
+      !isAllowedImageDataUrl(
+        imageDataUrl,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Unsupported image format. Use JPG, PNG or WEBP.",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const imageSizeBytes =
+      estimateBase64Bytes(
+        imageDataUrl,
+      );
+
+    const maximumImageSizeBytes =
+      10 * 1024 * 1024;
+
+    if (
+      imageSizeBytes >
+      maximumImageSizeBytes
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "The image is too large. Maximum size is 10 MB.",
+        },
+        {
+          status: 413,
+        },
+      );
+    }
+
+    /*
+     * 4. Atomically reserve one daily scan.
      */
     const {
-      data: usageData,
-      error: usageError,
+      data: claimData,
+      error: claimError,
     } = await supabaseAdmin.rpc(
-      "consume_ai_usage",
+      "claim_food_scan",
       {
-        p_user_id: user.id,
-        p_usage_type: "food_scan",
-        p_daily_limit: 2,
+        p_user_id: userId,
+        p_limit:
+          DAILY_FOOD_SCAN_LIMIT,
       },
     );
 
-    if (usageError) {
+    if (claimError) {
       console.error(
-        "Food scanner usage error:",
-        usageError,
+        "Food scan usage claim error:",
+        claimError,
       );
 
       return NextResponse.json(
@@ -199,11 +303,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const usage = (
-      Array.isArray(usageData)
-        ? usageData[0]
-        : usageData
-    ) as UsageResult | null;
+    const usage = Array.isArray(
+      claimData,
+    )
+      ? (claimData[0] as
+          | UsageResult
+          | undefined)
+      : (claimData as
+          | UsageResult
+          | null);
 
     if (!usage) {
       return NextResponse.json(
@@ -222,11 +330,13 @@ export async function POST(request: Request) {
         {
           error:
             "You have reached your daily limit of 2 AI food scans. Your limit resets tomorrow.",
-          code: "DAILY_LIMIT_REACHED",
+          code:
+            "DAILY_LIMIT_REACHED",
           usage: {
             used: usage.used,
-            limit: usage.daily_limit,
-            remaining: usage.remaining,
+            limit:
+              DAILY_FOOD_SCAN_LIMIT,
+            remaining: 0,
           },
         },
         {
@@ -235,68 +345,22 @@ export async function POST(request: Request) {
       );
     }
 
-    /*
-     * 4. Validate the uploaded image.
-     */
-    const body =
-      (await request.json()) as AnalyzeFoodRequest;
-
-    const imageDataUrl = body.imageDataUrl?.trim();
-
-    if (!imageDataUrl) {
-      return NextResponse.json(
-        {
-          error: "No food image was provided.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    if (!isAllowedImageDataUrl(imageDataUrl)) {
-      return NextResponse.json(
-        {
-          error:
-            "Unsupported image format. Use JPG, PNG or WEBP.",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    const imageSizeBytes =
-      estimateBase64Bytes(imageDataUrl);
-
-    const maximumImageSizeBytes =
-      10 * 1024 * 1024;
-
-    if (imageSizeBytes > maximumImageSizeBytes) {
-      return NextResponse.json(
-        {
-          error:
-            "The image is too large. Maximum size is 10 MB.",
-        },
-        {
-          status: 413,
-        },
-      );
-    }
+    reservedUserId = userId;
 
     /*
-     * 5. Analyze the meal with an OpenAI vision model.
+     * 5. Analyze meal.
      */
-    const response = await openai.responses.create({
-      model: openaiModel,
+    const response =
+      await openai.responses.create({
+        model: openaiModel,
 
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: `
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: `
 You are Zentro's professional AI nutrition analysis system.
 
 Analyze the food or meal visible in the image.
@@ -314,169 +378,192 @@ Your task:
 - Use grams where practical.
 - Return numbers rounded to one decimal place.
 - Do not invent ingredients that are not reasonably likely.
-              `.trim(),
-            },
-            {
-              type: "input_image",
-              image_url: imageDataUrl,
-              detail: "high",
-            },
-          ],
-        },
-      ],
+                `.trim(),
+              },
+              {
+                type: "input_image",
+                image_url:
+                  imageDataUrl,
+                detail: "high",
+              },
+            ],
+          },
+        ],
 
-      text: {
-        format: {
-          type: "json_schema",
-          name: "zentro_food_analysis",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              is_food: {
-                type: "boolean",
-              },
-              meal_name: {
-                type: "string",
-              },
-              description: {
-                type: "string",
-              },
-              portion_estimate: {
-                type: "string",
-              },
-              total_calories: {
-                type: "number",
-              },
-              calorie_range: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  minimum: {
-                    type: "number",
-                  },
-                  maximum: {
-                    type: "number",
-                  },
+        text: {
+          format: {
+            type: "json_schema",
+            name:
+              "zentro_food_analysis",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties:
+                false,
+              properties: {
+                is_food: {
+                  type: "boolean",
                 },
-                required: [
-                  "minimum",
-                  "maximum",
-                ],
-              },
-              macros: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  protein_g: {
-                    type: "number",
-                  },
-                  carbohydrates_g: {
-                    type: "number",
-                  },
-                  fat_g: {
-                    type: "number",
-                  },
-                  fiber_g: {
-                    type: "number",
-                  },
+                meal_name: {
+                  type: "string",
                 },
-                required: [
-                  "protein_g",
-                  "carbohydrates_g",
-                  "fat_g",
-                  "fiber_g",
-                ],
-              },
-              ingredients: {
-                type: "array",
-                items: {
+                description: {
+                  type: "string",
+                },
+                portion_estimate: {
+                  type: "string",
+                },
+                total_calories: {
+                  type: "number",
+                },
+                calorie_range: {
                   type: "object",
-                  additionalProperties: false,
+                  additionalProperties:
+                    false,
                   properties: {
-                    name: {
-                      type: "string",
-                    },
-                    estimated_amount: {
-                      type: "string",
-                    },
-                    estimated_grams: {
+                    minimum: {
                       type: "number",
                     },
-                    estimated_calories: {
+                    maximum: {
                       type: "number",
                     },
                   },
                   required: [
-                    "name",
-                    "estimated_amount",
-                    "estimated_grams",
-                    "estimated_calories",
+                    "minimum",
+                    "maximum",
                   ],
                 },
-              },
-              confidence: {
-                type: "string",
-                enum: [
-                  "low",
-                  "medium",
-                  "high",
-                ],
-              },
-              assumptions: {
-                type: "array",
-                items: {
+                macros: {
+                  type: "object",
+                  additionalProperties:
+                    false,
+                  properties: {
+                    protein_g: {
+                      type: "number",
+                    },
+                    carbohydrates_g: {
+                      type: "number",
+                    },
+                    fat_g: {
+                      type: "number",
+                    },
+                    fiber_g: {
+                      type: "number",
+                    },
+                  },
+                  required: [
+                    "protein_g",
+                    "carbohydrates_g",
+                    "fat_g",
+                    "fiber_g",
+                  ],
+                },
+                ingredients: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties:
+                      false,
+                    properties: {
+                      name: {
+                        type: "string",
+                      },
+                      estimated_amount: {
+                        type: "string",
+                      },
+                      estimated_grams: {
+                        type: "number",
+                      },
+                      estimated_calories: {
+                        type: "number",
+                      },
+                    },
+                    required: [
+                      "name",
+                      "estimated_amount",
+                      "estimated_grams",
+                      "estimated_calories",
+                    ],
+                  },
+                },
+                confidence: {
                   type: "string",
+                  enum: [
+                    "low",
+                    "medium",
+                    "high",
+                  ],
+                },
+                assumptions: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                  },
+                },
+                warnings: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                  },
                 },
               },
-              warnings: {
-                type: "array",
-                items: {
-                  type: "string",
-                },
-              },
+              required: [
+                "is_food",
+                "meal_name",
+                "description",
+                "portion_estimate",
+                "total_calories",
+                "calorie_range",
+                "macros",
+                "ingredients",
+                "confidence",
+                "assumptions",
+                "warnings",
+              ],
             },
-            required: [
-              "is_food",
-              "meal_name",
-              "description",
-              "portion_estimate",
-              "total_calories",
-              "calorie_range",
-              "macros",
-              "ingredients",
-              "confidence",
-              "assumptions",
-              "warnings",
-            ],
           },
         },
-      },
-    });
 
-    if (!response.output_text) {
-      return NextResponse.json(
-        {
-          error:
-            "The AI could not analyze this image.",
-        },
-        {
-          status: 502,
-        },
+        max_output_tokens: 1400,
+      });
+
+    const outputText =
+      response.output_text?.trim();
+
+    if (!outputText) {
+      throw new Error(
+        "The AI could not analyze this image.",
       );
     }
 
-    const analysis = JSON.parse(
-      response.output_text,
-    );
+    const analysis =
+      JSON.parse(outputText);
 
     if (!analysis.is_food) {
+      await releaseReservedUsage(
+        userId,
+      );
+
+      reservedUserId = null;
+
       return NextResponse.json(
         {
           error:
             "No recognizable food was found in the image.",
+          code: "NO_FOOD_FOUND",
           analysis,
+          usage: {
+            used: Math.max(
+              usage.used - 1,
+              0,
+            ),
+            limit:
+              DAILY_FOOD_SCAN_LIMIT,
+            remaining: Math.min(
+              usage.remaining + 1,
+              DAILY_FOOD_SCAN_LIMIT,
+            ),
+          },
         },
         {
           status: 422,
@@ -484,15 +571,20 @@ Your task:
       );
     }
 
+    /*
+     * 6. Save successful scan.
+     */
     const {
       data: savedScan,
       error: saveError,
     } = await supabaseAdmin
       .from("food_scan_history")
       .insert({
-        user_id: user.id,
-        meal_name: analysis.meal_name,
-        description: analysis.description,
+        user_id: userId,
+        meal_name:
+          analysis.meal_name,
+        description:
+          analysis.description,
         total_calories:
           analysis.total_calories,
         protein_g:
@@ -520,26 +612,36 @@ Your task:
       .select("id")
       .single();
 
-    if (saveError) {
-      console.error(
-        "Could not save scan:",
-        saveError,
+    if (saveError || !savedScan) {
+      throw new Error(
+        saveError?.message ||
+          "Could not save scan.",
       );
     }
+
+    reservedUserId = null;
 
     return NextResponse.json({
       success: true,
       analysis,
-      scanId: savedScan?.id ?? null,
+      scanId: savedScan.id,
       usage: {
         used: usage.used,
-        limit: usage.daily_limit,
-        remaining: usage.remaining,
+        limit:
+          DAILY_FOOD_SCAN_LIMIT,
+        remaining:
+          usage.remaining,
       },
       disclaimer:
         "Nutrition values are estimates based on the visible image. Actual values can vary because portion weight, oils, sauces and ingredients may not be visible.",
     });
   } catch (error) {
+    if (reservedUserId) {
+      await releaseReservedUsage(
+        reservedUserId,
+      );
+    }
+
     console.error(
       "AI food analysis error:",
       error,
