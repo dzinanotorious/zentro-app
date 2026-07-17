@@ -230,19 +230,22 @@ export default function CoachPage() {
       setConversations(loadedConversations);
 
       if (usageError) {
-        console.error("Could not load AI Coach usage:", usageError);
+        console.error(
+          "Could not load AI Coach usage:",
+          usageError,
+        );
+      } else {
+        const usedToday = Number(
+          usageData?.coach_messages_used ?? 0,
+        );
+      
+        setCoachUsage({
+          used: usedToday,
+          limit: 15,
+          remaining: Math.max(15 - usedToday, 0),
+        });
       }
-
-      const usedToday = Number(
-        usageData?.coach_messages_used ?? 0,
-      );
-
-      setCoachUsage({
-        used: usedToday,
-        limit: 15,
-        remaining: Math.max(15 - usedToday, 0),
-      });
-
+      
       if (preferenceData) {
         setPreferences({
           coaching_style:

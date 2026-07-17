@@ -496,11 +496,11 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen overflow-hidden bg-[#050507] text-white">
       <div className="pointer-events-none fixed inset-0">
-        <div className="absolute left-[15%] top-[-350px] h-[700px] w-[700px] rounded-full bg-purple-700/20 blur-[90px]" />
+        <div className="absolute left-[15%] top-[-350px] h-[700px] w-[700px] rounded-full bg-purple-700/20 blur-[40px]" />
 
-        <div className="absolute -right-72 top-[35%] h-[650px] w-[650px] rounded-full bg-fuchsia-900/10 blur-[90px]" />
+        <div className="absolute -right-72 top-[35%] h-[650px] w-[650px] rounded-full bg-fuchsia-900/10 blur-[40px]" />
 
-        <div className="absolute bottom-[-350px] left-[35%] h-[650px] w-[650px] rounded-full bg-violet-900/10 blur-[90px]" />
+        <div className="absolute bottom-[-350px] left-[35%] h-[650px] w-[650px] rounded-full bg-violet-900/10 blur-[40px]" />
       </div>
 
       <div className="relative flex min-h-screen">
@@ -624,16 +624,30 @@ export default function DashboardPage() {
           </header>
 
           {/* Mobile navigation drawer */}
-          {mobileMenuOpen && (
-            <>
-              <button
-                type="button"
-                aria-label="Close navigation menu"
-                onClick={() => setMobileMenuOpen(false)}
-                className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm lg:hidden"
-              />
+          <div
+            className={`fixed inset-0 z-40 lg:hidden ${
+              mobileMenuOpen
+                ? "pointer-events-auto"
+                : "pointer-events-none"
+            }`}
+            aria-hidden={!mobileMenuOpen}
+          >
+            <button
+              type="button"
+              aria-label="Close navigation menu"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`absolute inset-0 bg-black/75 transition-opacity duration-200 ${
+                mobileMenuOpen ? "opacity-100" : "opacity-0"
+              }`}
+            />
 
-              <aside className="fixed inset-y-0 left-0 z-50 flex w-[86%] max-w-[340px] flex-col border-r border-white/[0.08] bg-[#08080c] p-5 shadow-2xl lg:hidden">
+            <aside
+              className={`absolute inset-y-0 left-0 z-50 flex w-[86%] max-w-[340px] flex-col border-r border-white/[0.08] bg-[#08080c] p-5 shadow-2xl transition-transform duration-200 will-change-transform ${
+                mobileMenuOpen
+                  ? "translate-x-0"
+                  : "-translate-x-full"
+              }`}
+            >
                 <div className="flex items-center justify-between">
                   <Link
                     href="/dashboard"
@@ -720,9 +734,8 @@ export default function DashboardPage() {
                     {loggingOut ? "Logging out..." : "Log out"}
                   </button>
                 </div>
-              </aside>
-            </>
-          )}
+            </aside>
+          </div>
 
           <div className="mx-auto max-w-[1500px] px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
             {/* Top header */}

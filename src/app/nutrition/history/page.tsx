@@ -260,6 +260,13 @@ export default function NutritionHistoryPage() {
             </Link>
 
             <Link
+              href="/nutrition/foods"
+              className="rounded-2xl border border-purple-500/25 bg-purple-500/10 px-5 py-3 text-sm font-bold text-purple-200 transition hover:scale-[1.02]"
+            >
+              Food Library
+            </Link>
+
+            <Link
               href="/nutrition/scan"
               className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 py-3 text-sm font-bold shadow-[0_0_30px_rgba(139,92,246,0.18)] transition hover:scale-[1.02]"
             >
@@ -331,12 +338,21 @@ export default function NutritionHistoryPage() {
               calories, macros and ingredients here.
             </p>
 
-            <Link
-              href="/nutrition/scan"
-              className="mt-7 inline-block rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-7 py-4 font-bold"
-            >
-              Scan your first meal
-            </Link>
+            <div className="mt-7 flex flex-wrap justify-center gap-3">
+              <Link
+                href="/nutrition/foods"
+                className="rounded-2xl border border-purple-500/25 bg-purple-500/10 px-7 py-4 font-bold text-purple-200"
+              >
+                Add food manually
+              </Link>
+
+              <Link
+                href="/nutrition/scan"
+                className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-7 py-4 font-bold"
+              >
+                Scan your first meal
+              </Link>
+            </div>
           </section>
         ) : (
           <div className="mt-10 space-y-8">
