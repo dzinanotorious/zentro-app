@@ -81,6 +81,16 @@ const navigation = [
       icon: "✦",
     },
     {
+      label: "Workout Builder",
+      href: "/workout-builder",
+      icon: "🏋️",
+    },
+    {
+      label: "Community",
+      href: "/community",
+      icon: "👥",
+    },
+    {
       label: "Profile",
       href: "/profile",
       icon: "○",
@@ -1369,7 +1379,7 @@ export default function DashboardPage() {
                 </h2>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <QuickAction
                   href="/programs"
                   icon="◈"
@@ -1397,6 +1407,21 @@ export default function DashboardPage() {
                   title="Ask AI Coach"
                   description="Get guidance based on your goal."
                   pro
+                />
+
+                <QuickAction
+                  href="/workout-builder"
+                  icon="🏋️"
+                  title="Workout Builder"
+                  description="Create personalized workouts based on your goals, experience and equipment."
+                  pro
+                />
+
+                <QuickAction
+                  href="/community"
+                  icon="👥"
+                  title="Zentro Community"
+                  description="Share posts, photos and progress with other Zentro athletes."
                 />
 
                 <QuickAction
