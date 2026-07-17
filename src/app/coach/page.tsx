@@ -1,169 +1,224 @@
 "use client";
 
 import Link from "next/link";
-import {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { isProUser } from "@/lib/subscription";
 
-type Conversation = {
+type Profile = {
   id: string;
-  title: string;
-  created_at: string;
-  updated_at: string;
+  email: string | null;
+  full_name: string | null;
+  age: number | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  gender: string | null;
+  activity: string | null;
+  goal: string | null;
+  experience: string | null;
+  training_days: number | null;
+  daily_calories: number | null;
+  protein_grams: number | null;
+  fat_grams: number | null;
+  carbs_grams: number | null;
+  onboarding_completed: boolean | null;
 };
 
+type AIUsage = {
+  coach_messages_used: number;
+  food_scans_used: number;
+};
 
-type Message = {
+type NutritionLog = {
+  log_date: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+};
+
+type MealSummary = {
   id: string;
-  role: "user" | "assistant";
-  content: string;
-  created_at: string;
+  completed: boolean;
 };
 
-type CoachUsage = {
-  used: number;
-  limit: number;
-  remaining: number;
+type LatestFoodScan = {
+  id: string;
+  meal_name: string;
+  total_calories: number;
+  scanned_at: string;
 };
 
-type CoachPreferences = {
-  coaching_style: "supportive" | "balanced" | "direct" | "intense";
-  response_length: "short" | "detailed";
-  language: string;
-  include_workout_data: boolean;
-  include_nutrition_data: boolean;
-  include_progress_data: boolean;
-};
+const navigation = [
+    {
+      label: "Dashboard",
+      href: "/dashboard",
+      icon: "⌂",
+    },
+    {
+      label: "Programs",
+      href: "/programs",
+      icon: "◈",
+    },
+    {
+      label: "Nutrition",
+      href: "/nutrition/history",
+      icon: "◎",
+    },
+    {
+      label: "Progress",
+      href: "/progress",
+      icon: "↗",
+    },
+    {
+      label: "Calendar",
+      href: "/calendar",
+      icon: "▦",
+    },
+    {
+      label: "AI Coach",
+      href: "/coach",
+      icon: "✦",
+    },
+    {
+      label: "Zentro-Community",
+      href: "/community",
+      icon: "◉",
+    },
+    {
+      label: "Workout Builder",
+      href: "/workout-builder",
+      icon: "⚡",
+    },
+    {
+      label: "Profile",
+      href: "/profile",
+      icon: "○",
+    },
+  ];
 
-const defaultPreferences: CoachPreferences = {
-  coaching_style: "balanced",
-  response_length: "detailed",
-  language: "mk",
-  include_workout_data: true,
-  include_nutrition_data: true,
-  include_progress_data: true,
-};
-
-const quickPrompts = [
-  {
-    title: "Analyze my workouts",
-    description: "Review my recent training, volume and intensity.",
-    prompt:
-      "Анализирај ги моите последни тренинзи. Кажи ми што е добро, што треба да подобрам и како да го структурирам следниот тренинг.",
-    icon: "W",
-  },
-  {
-    title: "Check my nutrition",
-    description: "Review calories, protein and macro consistency.",
-    prompt:
-      "Анализирај ја мојата исхрана во последните денови. Провери калории, протеини, јаглехидрати и масти и дај ми конкретни препораки.",
-    icon: "N",
-  },
-  {
-    title: "Review my progress",
-    description: "Interpret weight and measurement trends.",
-    prompt:
-      "Анализирај го мојот физички прогрес, тежината и мерењата. Објасни дали трендот е добар и што треба да правам следно.",
-    icon: "P",
-  },
-  {
-    title: "Recovery check",
-    description: "Evaluate fatigue, RPE and training balance.",
-    prompt:
-      "Направи recovery анализа според моите тренинзи, RPE и активност. Кажи ми дали треба да тренирам силно, полесно или да одморам.",
-    icon: "R",
-  },
-  {
-    title: "Build my next week",
-    description: "Create a practical seven-day action plan.",
-    prompt:
-      "Направи ми конкретен план за следните 7 дена со тренинзи, исхрана, recovery и најважни приоритети.",
-    icon: "7D",
-  },
-  {
-    title: "Daily coaching",
-    description: "Get the most important advice for today.",
-    prompt:
-      "Според моите податоци, која е најважната работа што треба да ја направам денес за подобар фитнес прогрес?",
-    icon: "AI",
-  },
+const weekDays = [
+  { day: "Mon", completed: true },
+  { day: "Tue", completed: true },
+  { day: "Wed", completed: false },
+  { day: "Thu", completed: true },
+  { day: "Fri", completed: false },
+  { day: "Sat", completed: false },
+  { day: "Sun", completed: false },
 ];
 
-function formatMessageDate(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
+function getLocalDateString(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
-function formatConversationDate(value: string) {
-  const date = new Date(value);
-  const now = new Date();
+function formatRelativeTime(value: string) {
+  const difference = Date.now() - new Date(value).getTime();
+  const minutes = Math.max(1, Math.round(difference / 60000));
 
-  if (date.toDateString() === now.toDateString()) {
-    return new Intl.DateTimeFormat("en", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
+  if (minutes < 60) {
+    return `${minutes} min ago`;
   }
 
-  return new Intl.DateTimeFormat("en", {
-    day: "numeric",
-    month: "short",
-  }).format(date);
+  const hours = Math.round(minutes / 60);
+
+  if (hours < 24) {
+    return `${hours} h ago`;
+  }
+
+  const days = Math.round(hours / 24);
+  return `${days} d ago`;
 }
 
-export default function CoachPage() {
-  const router = useRouter();
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
-
-  const [userId, setUserId] = useState("");
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<
-    string | null
-  >(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [preferences, setPreferences] =
-    useState<CoachPreferences>(defaultPreferences);
-
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [savingPreferences, setSavingPreferences] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [hasPro, setHasPro] = useState(false);
-  const [checkingPlan, setCheckingPlan] = useState(true);
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [renamingConversationId, setRenamingConversationId] = useState<
-    string | null
-  >(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [clearingConversations, setClearingConversations] =
-    useState(false);
-  const [coachUsage, setCoachUsage] = useState<CoachUsage>({
-    used: 0,
-    limit: 15,
-    remaining: 15,
-  });
-
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState<"success" | "error">(
-    "success",
+function calculateNutritionStreak(logs: NutritionLog[]) {
+  const loggedDates = new Set(
+    logs
+      .filter((log) => Number(log.calories) > 0)
+      .map((log) => log.log_date),
   );
 
-  const loadConversations = useCallback(
-    async (selectFirstConversation = false) => {
+  let streak = 0;
+  const current = new Date();
+
+  while (loggedDates.has(getLocalDateString(current))) {
+    streak += 1;
+    current.setDate(current.getDate() - 1);
+  }
+
+  return streak;
+}
+
+function getGoalName(goal?: string | null) {
+  if (goal === "gain") return "Muscle Gain";
+  if (goal === "lose") return "Fat Loss";
+  return "Balanced Fitness";
+}
+
+function getGoalDescription(goal?: string | null) {
+  if (goal === "gain") {
+    return "Build muscle with progressive strength training.";
+  }
+
+  if (goal === "lose") {
+    return "Reduce body fat while maintaining muscle and strength.";
+  }
+
+  return "Improve strength, conditioning and overall fitness.";
+}
+
+function getWorkoutName(goal?: string | null) {
+  if (goal === "gain") return "Upper Body Hypertrophy";
+  if (goal === "lose") return "Full Body Metabolic";
+  return "Full Body Strength";
+}
+
+function getActivityName(activity?: string | null) {
+  if (activity === "sedentary") return "Low activity";
+  if (activity === "light") return "Light activity";
+  if (activity === "moderate") return "Moderate activity";
+  if (activity === "high") return "High activity";
+  if (activity === "very_high") return "Very high activity";
+
+  return "Not selected";
+}
+
+function getFirstName(profile: Profile | null) {
+  const name = profile?.full_name?.trim();
+
+  if (!name) return "Athlete";
+
+  return name.split(" ")[0];
+}
+
+export default function DashboardPage() {
+  const router = useRouter();
+
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [aiUsage, setAiUsage] = useState<AIUsage>({
+    coach_messages_used: 0,
+    food_scans_used: 0,
+  });
+  const [nutritionLog, setNutritionLog] =
+    useState<NutritionLog | null>(null);
+  const [weeklyNutritionLogs, setWeeklyNutritionLogs] = useState<
+    NutritionLog[]
+  >([]);
+  const [todayMeals, setTodayMeals] = useState<MealSummary[]>([]);
+  const [latestFoodScan, setLatestFoodScan] =
+    useState<LatestFoodScan | null>(null);
+
+  useEffect(() => {
+    async function loadDashboard() {
+      setErrorMessage("");
+
       const {
         data: { user },
         error: userError,
@@ -174,575 +229,265 @@ export default function CoachPage() {
         return;
       }
 
-      setUserId(user.id);
+      setEmail(user.email ?? "");
 
-      // Supabase SQL limit functions use current_date in UTC.
-      // Keep the frontend usage lookup on the same UTC date.
-      const today = new Date()
-        .toISOString()
-        .slice(0, 10);
+      const today = getLocalDateString(new Date());
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+      const thirtyDaysAgoString = getLocalDateString(thirtyDaysAgo);
 
       const [
-        { data: conversationData, error },
-        { data: preferenceData },
+        { data: profileData, error: profileError },
         { data: usageData, error: usageError },
+        { data: nutritionData, error: nutritionError },
+        { data: mealsData, error: mealsError },
+        { data: recentNutritionData, error: recentNutritionError },
+        { data: latestScanData, error: latestScanError },
       ] = await Promise.all([
         supabase
-          .from("coach_conversations")
-          .select("id, title, created_at, updated_at")
-          .eq("user_id", user.id)
-          .order("updated_at", {
-            ascending: false,
-          })
-          .limit(100),
-
-        supabase
-          .from("coach_preferences")
-          .select(`
-            coaching_style,
-            response_length,
-            language,
-            include_workout_data,
-            include_nutrition_data,
-            include_progress_data
-          `)
-          .eq("user_id", user.id)
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
           .maybeSingle(),
 
         supabase
           .from("user_ai_usage")
-          .select("coach_messages_used")
+          .select("coach_messages_used, food_scans_used")
           .eq("user_id", user.id)
           .eq("date", today)
           .maybeSingle(),
+
+        supabase
+          .from("nutrition_logs")
+          .select("log_date, calories, protein, carbs, fats")
+          .eq("user_id", user.id)
+          .eq("log_date", today)
+          .maybeSingle(),
+
+        supabase
+          .from("meals")
+          .select("id, completed")
+          .eq("user_id", user.id)
+          .eq("meal_date", today),
+
+        supabase
+          .from("nutrition_logs")
+          .select("log_date, calories, protein, carbs, fats")
+          .eq("user_id", user.id)
+          .gte("log_date", thirtyDaysAgoString)
+          .lte("log_date", today)
+          .order("log_date", {
+            ascending: true,
+          }),
+
+        supabase
+          .from("food_scan_history")
+          .select("id, meal_name, total_calories, scanned_at")
+          .eq("user_id", user.id)
+          .order("scanned_at", {
+            ascending: false,
+          })
+          .limit(1)
+          .maybeSingle(),
       ]);
 
-      if (error) {
-        setMessageType("error");
-        setMessage(error.message);
+      if (profileError) {
+        setErrorMessage(
+          "Не можевме да ги вчитаме твоите податоци. Обиди се повторно.",
+        );
         setLoading(false);
         return;
       }
 
-      const loadedConversations =
-        (conversationData ?? []) as Conversation[];
-
-      setConversations(loadedConversations);
-
       if (usageError) {
-        console.error("Could not load AI Coach usage:", usageError);
+        console.error("Could not load AI usage:", usageError);
       }
 
-      const usedToday = Number(
-        usageData?.coach_messages_used ?? 0,
-      );
-
-      setCoachUsage({
-        used: usedToday,
-        limit: 15,
-        remaining: Math.max(15 - usedToday, 0),
-      });
-
-      if (preferenceData) {
-        setPreferences({
-          coaching_style:
-            preferenceData.coaching_style ?? "balanced",
-          response_length:
-            preferenceData.response_length ?? "detailed",
-          language: preferenceData.language ?? "mk",
-          include_workout_data:
-            preferenceData.include_workout_data ?? true,
-          include_nutrition_data:
-            preferenceData.include_nutrition_data ?? true,
-          include_progress_data:
-            preferenceData.include_progress_data ?? true,
-        });
+      if (nutritionError) {
+        console.error("Could not load nutrition log:", nutritionError);
       }
 
-      if (
-        selectFirstConversation &&
-        loadedConversations.length > 0
-      ) {
-        setActiveConversationId(loadedConversations[0].id);
+      if (mealsError) {
+        console.error("Could not load today's meals:", mealsError);
       }
 
-      setLoading(false);
-    },
-    [router],
-  );
+      if (recentNutritionError) {
+        console.error(
+          "Could not load weekly nutrition:",
+          recentNutritionError,
+        );
+      }
 
-  useEffect(() => {
-    async function checkSubscription() {
-      const pro = await isProUser();
+      if (latestScanError) {
+        console.error(
+          "Could not load latest food scan:",
+          latestScanError,
+        );
+      }
 
-      setHasPro(pro);
-      setCheckingPlan(false);
-    }
-
-    void checkSubscription();
-  }, []);
-
-  useEffect(() => {
-    if (checkingPlan || !hasPro) return;
-
-    void loadConversations(true);
-  }, [checkingPlan, hasPro, loadConversations]);
-
-  const loadMessages = useCallback(
-    async (conversationId: string) => {
-      setLoadingMessages(true);
-      setMessage("");
-
-      const { data, error } = await supabase
-        .from("coach_messages")
-        .select("id, role, content, created_at")
-        .eq("conversation_id", conversationId)
-        .eq("user_id", userId)
-        .order("created_at", {
-          ascending: true,
-        });
-
-      if (error) {
-        setMessageType("error");
-        setMessage(error.message);
-        setLoadingMessages(false);
+      if (!profileData?.onboarding_completed) {
+        router.replace("/onboarding");
         return;
       }
 
-      setMessages((data ?? []) as Message[]);
-      setLoadingMessages(false);
-    },
-    [userId],
+      setProfile(profileData as Profile);
+      setAiUsage({
+        coach_messages_used:
+          usageData?.coach_messages_used ?? 0,
+        food_scans_used:
+          usageData?.food_scans_used ?? 0,
+      });
+      setNutritionLog(
+        nutritionData
+          ? (nutritionData as NutritionLog)
+          : null,
+      );
+      setTodayMeals(
+        (mealsData ?? []) as MealSummary[],
+      );
+      setWeeklyNutritionLogs(
+        (recentNutritionData ?? []) as NutritionLog[],
+      );
+      setLatestFoodScan(
+        latestScanData
+          ? (latestScanData as LatestFoodScan)
+          : null,
+      );
+      setLoading(false);
+    }
+
+    void loadDashboard();
+  }, [router]);
+
+  const calorieTarget = profile?.daily_calories ?? 0;
+  const proteinTarget = profile?.protein_grams ?? 0;
+  const carbsTarget = profile?.carbs_grams ?? 0;
+  const fatTarget = profile?.fat_grams ?? 0;
+
+  const consumedCalories = Math.round(
+    Number(nutritionLog?.calories ?? 0),
+  );
+  const consumedProtein = Math.round(
+    Number(nutritionLog?.protein ?? 0),
+  );
+  const consumedCarbs = Math.round(
+    Number(nutritionLog?.carbs ?? 0),
+  );
+  const consumedFat = Math.round(
+    Number(nutritionLog?.fats ?? 0),
   );
 
-  useEffect(() => {
-    if (!activeConversationId || !userId) {
-      setMessages([]);
-      return;
-    }
+  const completedMealsToday = todayMeals.filter(
+    (meal) => meal.completed,
+  ).length;
 
-    void loadMessages(activeConversationId);
-  }, [activeConversationId, loadMessages, userId]);
+  const nutritionStreak = useMemo(
+    () => calculateNutritionStreak(weeklyNutritionLogs),
+    [weeklyNutritionLogs],
+  );
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: "smooth",
-    });
-  }, [messages, sending]);
-
-  const filteredConversations = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-
-    if (!query) {
-      return conversations;
-    }
-
-    return conversations.filter((conversation) =>
-      conversation.title.toLowerCase().includes(query),
+  const lastSevenDays = useMemo(() => {
+    const byDate = new Map(
+      weeklyNutritionLogs.map((log) => [
+        log.log_date,
+        log,
+      ]),
     );
-  }, [conversations, searchQuery]);
 
-  function createNewChat() {
-    setActiveConversationId(null);
-    setMessages([]);
-    setInput("");
-    setMessage("");
-    setSidebarOpen(false);
-  }
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - index));
 
-  async function sendMessage(
-    event?: FormEvent<HTMLFormElement>,
-    customPrompt?: string,
-  ) {
-    event?.preventDefault();
+      const dateKey = getLocalDateString(date);
+      const log = byDate.get(dateKey);
 
-    const content = (customPrompt ?? input).trim();
-
-    if (!content || sending || coachUsage.remaining <= 0) {
-      if (coachUsage.remaining <= 0) {
-        setMessageType("error");
-        setMessage(
-          "Го достигна дневниот лимит од 15 AI Coach пораки. Лимитот се обновува утре.",
-        );
-      }
-
-      return;
-    }
-
-    setSending(true);
-    setMessage("");
-    setInput("");
-
-    const temporaryUserMessage: Message = {
-      id: `temporary-user-${Date.now()}`,
-      role: "user",
-      content,
-      created_at: new Date().toISOString(),
-    };
-
-    setMessages((current) => [
-      ...current,
-      temporaryUserMessage,
-    ]);
-
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    if (sessionError || !session?.access_token) {
-      setMessageType("error");
-      setMessage("Твојата сесија е истечена. Најави се повторно.");
-      setSending(false);
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/coach", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          message: content,
-          conversationId: activeConversationId,
-        }),
-      });
-
-      const contentType =
-        response.headers.get("content-type") ?? "";
-
-      const result = contentType.includes("application/json")
-        ? ((await response.json()) as {
-            answer?: string;
-            conversationId?: string;
-            error?: string;
-            code?: string;
-            usage?: CoachUsage;
-          })
-        : {
-            error: `Server error (${response.status}).`,
-          };
-
-      if (result.usage) {
-        setCoachUsage(result.usage);
-      }
-
-      if (!response.ok || !result.answer) {
-        throw new Error(
-          result.error ||
-            "AI Coach не можеше да подготви одговор.",
-        );
-      }
-
-      const returnedConversationId =
-        result.conversationId ?? activeConversationId;
-
-      if (returnedConversationId) {
-        setActiveConversationId(returnedConversationId);
-      }
-
-      const assistantMessage: Message = {
-        id: `temporary-assistant-${Date.now()}`,
-        role: "assistant",
-        content: result.answer,
-        created_at: new Date().toISOString(),
-      };
-
-      setMessages((current) => [
-        ...current,
-        assistantMessage,
-      ]);
-
-      if (!result.usage) {
-        setCoachUsage((current) => ({
-          ...current,
-          used: Math.min(current.limit, current.used + 1),
-          remaining: Math.max(current.remaining - 1, 0),
-        }));
-      }
-
-      await loadConversations(false);
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Се појави непозната грешка.";
-
-      setMessageType("error");
-      setMessage(errorMessage);
-
-      setMessages((current) =>
-        current.filter(
-          (item) => item.id !== temporaryUserMessage.id,
+      return {
+        dateKey,
+        label: new Intl.DateTimeFormat("en", {
+          weekday: "short",
+        }).format(date),
+        calories: Math.round(
+          Number(log?.calories ?? 0),
         ),
-      );
-    } finally {
-      setSending(false);
-    }
-  }
-
-  async function deleteConversation(
-    conversationId: string,
-  ) {
-    const confirmed = window.confirm(
-      "Дали сакаш да го избришеш овој разговор?",
-    );
-
-    if (!confirmed) return;
-
-    const { error } = await supabase
-      .from("coach_conversations")
-      .delete()
-      .eq("id", conversationId)
-      .eq("user_id", userId);
-
-    if (error) {
-      setMessageType("error");
-      setMessage(error.message);
-      return;
-    }
-
-    if (activeConversationId === conversationId) {
-      createNewChat();
-    }
-
-    await loadConversations(false);
-  }
-
-  async function renameConversation() {
-    if (!renamingConversationId || !userId) return;
-
-    const title = renameValue.trim();
-
-    if (!title) {
-      setMessageType("error");
-      setMessage("Conversation title cannot be empty.");
-      return;
-    }
-
-    const { error } = await supabase
-      .from("coach_conversations")
-      .update({
-        title: title.slice(0, 80),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", renamingConversationId)
-      .eq("user_id", userId);
-
-    if (error) {
-      setMessageType("error");
-      setMessage(error.message);
-      return;
-    }
-
-    setRenamingConversationId(null);
-    setRenameValue("");
-    setMessageType("success");
-    setMessage("Conversation renamed.");
-    await loadConversations(false);
-  }
-
-  async function clearAllConversations() {
-    if (!userId || conversations.length === 0) return;
-
-    const confirmed = window.confirm(
-      "Delete all AI Coach conversations? This cannot be undone.",
-    );
-
-    if (!confirmed) return;
-
-    setClearingConversations(true);
-    setMessage("");
-
-    const { error } = await supabase
-      .from("coach_conversations")
-      .delete()
-      .eq("user_id", userId);
-
-    if (error) {
-      setMessageType("error");
-      setMessage(error.message);
-      setClearingConversations(false);
-      return;
-    }
-
-    createNewChat();
-    setConversations([]);
-    setMessageType("success");
-    setMessage("All conversations were deleted.");
-    setClearingConversations(false);
-  }
-
-  function exportConversation() {
-    if (messages.length === 0) return;
-
-    const activeConversation = conversations.find(
-      (conversation) =>
-        conversation.id === activeConversationId,
-    );
-
-    const title =
-      activeConversation?.title || "Zentro AI Coach";
-
-    const content = [
-      title,
-      "=".repeat(title.length),
-      "",
-      ...messages.map(
-        (chatMessage) =>
-          `${chatMessage.role === "user" ? "You" : "Zentro AI"} (${new Date(
-            chatMessage.created_at,
-          ).toLocaleString()}):\n${chatMessage.content}\n`,
-      ),
-    ].join("\n");
-
-    const blob = new Blob([content], {
-      type: "text/plain;charset=utf-8",
+      };
     });
+  }, [weeklyNutritionLogs]);
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+  const maximumWeeklyCalories = Math.max(
+    calorieTarget,
+    ...lastSevenDays.map((day) => day.calories),
+    1,
+  );
 
-    link.href = url;
-    link.download = `${title
-      .replace(/[^a-z0-9]+/gi, "-")
-      .replace(/^-|-$/g, "")
-      .toLowerCase() || "zentro-chat"}.txt`;
+  const caloriePercentage = useMemo(() => {
+    if (!calorieTarget) return 0;
 
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    return Math.min(
+      100,
+      Math.round((consumedCalories / calorieTarget) * 100),
+    );
+  }, [calorieTarget, consumedCalories]);
+
+  const coachMessagesRemaining = Math.max(
+    15 - aiUsage.coach_messages_used,
+    0,
+  );
+
+  const foodScansRemaining = Math.max(
+    2 - aiUsage.food_scans_used,
+    0,
+  );
+
+  const completedWorkouts = weekDays.filter(
+    (item) => item.completed,
+  ).length;
+
+  async function handleLogout() {
+    setLoggingOut(true);
+
+    await supabase.auth.signOut();
+
+    router.replace("/login");
+    router.refresh();
   }
 
-  async function savePreferences() {
-    if (!userId) return;
-
-    setSavingPreferences(true);
-    setMessage("");
-
-    const { error } = await supabase
-      .from("coach_preferences")
-      .upsert(
-        {
-          user_id: userId,
-          ...preferences,
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "user_id",
-        },
-      );
-
-    if (error) {
-      setMessageType("error");
-      setMessage(error.message);
-      setSavingPreferences(false);
-      return;
-    }
-
-    setMessageType("success");
-    setMessage("AI Coach preferences successfully saved.");
-    setShowSettings(false);
-    setSavingPreferences(false);
-  }
-
-  function updatePreference<
-    Key extends keyof CoachPreferences,
-  >(key: Key, value: CoachPreferences[Key]) {
-    setPreferences((current) => ({
-      ...current,
-      [key]: value,
-    }));
-  }
-
-  if (checkingPlan || (hasPro && loading)) {
+  if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#050507] text-white">
         <div className="text-center">
           <div className="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
 
           <p className="mt-5 text-sm text-zinc-400">
-            Preparing your AI Coach...
+            Preparing your dashboard...
           </p>
         </div>
       </main>
     );
   }
 
-  if (!hasPro) {
+  if (errorMessage) {
     return (
-      <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#050507] px-5 py-10 text-white">
-        <div className="pointer-events-none fixed inset-0">
-          <div className="absolute left-[10%] top-[-320px] h-[720px] w-[720px] rounded-full bg-purple-700/20 blur-[180px]" />
-          <div className="absolute -right-72 bottom-[-280px] h-[650px] w-[650px] rounded-full bg-fuchsia-900/10 blur-[170px]" />
-        </div>
-
-        <section className="relative w-full max-w-2xl overflow-hidden rounded-[38px] border border-purple-500/20 bg-gradient-to-br from-purple-600/15 via-purple-950/10 to-[#0b0b10] p-7 text-center shadow-2xl sm:p-10">
-          <div className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-purple-500/15 blur-[80px]" />
-
-          <div className="relative">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] border border-purple-500/25 bg-purple-500/15 text-3xl text-purple-300 shadow-[0_0_45px_rgba(139,92,246,0.18)]">
-              ✦
-            </div>
-
-            <p className="mt-7 text-xs font-bold tracking-[0.22em] text-purple-400">
-              ZENTRO PRO
-            </p>
-
-            <h1 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">
-              Unlock AI Performance Coach
-            </h1>
-
-            <p className="mx-auto mt-5 max-w-xl leading-7 text-zinc-500">
-              Get personalized workout, nutrition, recovery and progress
-              analysis based on your real Zentro data.
-            </p>
-
-            <div className="mt-8 grid gap-3 text-left sm:grid-cols-2">
-              {[
-                "AI workout and volume analysis",
-                "Personalized nutrition guidance",
-                "Recovery and fatigue recommendations",
-                "Weekly action plans",
-                "Progress and plateau detection",
-                "Priority access to new AI features",
-              ].map((feature) => (
-                <div
-                  key={feature}
-                  className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 text-sm text-zinc-300"
-                >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-purple-500/12 text-xs font-bold text-purple-300">
-                    ✓
-                  </span>
-
-                  {feature}
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-9 grid gap-3 sm:grid-cols-2">
-              <Link
-                href="/dashboard"
-                className="rounded-2xl border border-white/[0.08] bg-white/[0.025] px-6 py-4 font-bold text-zinc-400 transition hover:border-purple-500/25 hover:text-white"
-              >
-                Back to dashboard
-              </Link>
-
-              <Link
-                href="/pricing"
-                className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-6 py-4 font-bold shadow-[0_0_35px_rgba(139,92,246,0.2)] transition hover:scale-[1.02]"
-              >
-                Upgrade to Zentro Pro
-              </Link>
-            </div>
-
-            <p className="mt-5 text-xs text-zinc-700">
-              Zentro Pro starts at €9.99 per month.
-            </p>
+      <main className="flex min-h-screen items-center justify-center bg-[#050507] px-5 text-white">
+        <section className="w-full max-w-md rounded-3xl border border-red-500/20 bg-red-500/[0.06] p-8 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-2xl">
+            !
           </div>
+
+          <h1 className="mt-5 text-2xl font-black">
+            Something went wrong
+          </h1>
+
+          <p className="mt-3 leading-7 text-zinc-400">
+            {errorMessage}
+          </p>
+
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-7 rounded-2xl bg-purple-600 px-6 py-3 font-bold transition hover:bg-purple-500"
+          >
+            Try again
+          </button>
         </section>
       </main>
     );
@@ -751,682 +496,1145 @@ export default function CoachPage() {
   return (
     <main className="min-h-screen overflow-hidden bg-[#050507] text-white">
       <div className="pointer-events-none fixed inset-0">
-        <div className="absolute left-[8%] top-[-400px] h-[850px] w-[850px] rounded-full bg-purple-700/20 blur-[190px]" />
-        <div className="absolute -right-80 top-[35%] h-[700px] w-[700px] rounded-full bg-fuchsia-900/10 blur-[180px]" />
+        <div className="absolute left-[15%] top-[-350px] h-[700px] w-[700px] rounded-full bg-purple-700/20 blur-[170px]" />
+
+        <div className="absolute -right-72 top-[35%] h-[650px] w-[650px] rounded-full bg-fuchsia-900/10 blur-[170px]" />
+
+        <div className="absolute bottom-[-350px] left-[35%] h-[650px] w-[650px] rounded-full bg-violet-900/10 blur-[170px]" />
       </div>
 
       <div className="relative flex min-h-screen">
-        <aside
-          className={`fixed inset-y-0 left-0 z-40 w-[310px] border-r border-white/[0.06] bg-[#08080c]/95 p-5 backdrop-blur-xl transition-transform lg:static lg:translate-x-0 ${
-            sidebarOpen
-              ? "translate-x-0"
-              : "-translate-x-full"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <Link
-              href="/dashboard"
-              className="text-xl font-black tracking-tight"
-            >
-              ZENTRO
-              <span className="text-purple-400">.</span>
-            </Link>
+        {/* Desktop sidebar */}
+        <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-white/[0.06] bg-[#08080c]/90 p-6 backdrop-blur-xl lg:flex lg:flex-col">
+          <Link href="/" className="flex items-center gap-3 px-2">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-purple-400/25 bg-purple-500/10 text-xl font-black text-purple-300 shadow-[0_0_30px_rgba(139,92,246,0.16)]">
+              Z
+            </div>
 
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(false)}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-zinc-500 lg:hidden"
-            >
-              ×
-            </button>
-          </div>
+            <div>
+              <p className="font-black tracking-[0.25em]">
+                ZENTRO
+              </p>
 
-          <button
-            type="button"
-            onClick={createNewChat}
-            className="mt-7 w-full rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 py-4 text-sm font-bold shadow-[0_0_30px_rgba(139,92,246,0.16)]"
-          >
-            + New coaching chat
-          </button>
+              <p className="mt-1 text-[10px] tracking-[0.18em] text-zinc-600">
+                FITNESS INTELLIGENCE
+              </p>
+            </div>
+          </Link>
 
-          <div className="mt-4 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-3">
-            <input
-              value={searchQuery}
-              onChange={(event) =>
-                setSearchQuery(event.target.value)
-              }
-              placeholder="Search conversations..."
-              className="w-full bg-transparent px-2 py-2 text-sm outline-none placeholder:text-zinc-700"
-            />
-          </div>
+          <nav className="mt-12 space-y-2">
+            {navigation.map((item, index) => {
+              const active = index === 0;
 
-          <div className="mt-7">
-            <p className="px-2 text-[10px] font-bold tracking-[0.18em] text-zinc-700">
-              RECENT CONVERSATIONS
-            </p>
-
-            <div className="mt-3 max-h-[calc(100vh-300px)] space-y-2 overflow-y-auto pr-1">
-              {filteredConversations.map((conversation) => {
-                const active =
-                  conversation.id === activeConversationId;
-
-                return (
-                  <div
-                    key={conversation.id}
-                    className={`group flex items-center rounded-2xl border transition ${
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className={`group flex items-center gap-4 rounded-2xl px-4 py-3.5 text-sm font-semibold transition ${
+                    active
+                      ? "border border-purple-500/20 bg-purple-500/10 text-white shadow-[0_0_25px_rgba(139,92,246,0.08)]"
+                      : "border border-transparent text-zinc-500 hover:border-white/[0.06] hover:bg-white/[0.03] hover:text-white"
+                  }`}
+                >
+                  <span
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl text-base ${
                       active
-                        ? "border-purple-500/25 bg-purple-500/10"
-                        : "border-transparent hover:border-white/[0.06] hover:bg-white/[0.025]"
+                        ? "bg-purple-500/15 text-purple-300"
+                        : "bg-white/[0.03] text-zinc-600 group-hover:text-purple-300"
                     }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveConversationId(
-                          conversation.id,
-                        );
-                        setSidebarOpen(false);
-                      }}
-                      className="min-w-0 flex-1 px-4 py-4 text-left"
-                    >
-                      <p className="truncate text-sm font-semibold text-zinc-300">
-                        {conversation.title}
-                      </p>
+                    {item.icon}
+                  </span>
 
-                      <p className="mt-1 text-[10px] text-zinc-700">
-                        {formatConversationDate(
-                          conversation.updated_at,
-                        )}
-                      </p>
-                    </button>
+                  {item.label}
 
-                    <div className="mr-2 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-                      <button
-                        type="button"
-                        title="Rename conversation"
-                        onClick={() => {
-                          setRenamingConversationId(
-                            conversation.id,
-                          );
-                          setRenameValue(
-                            conversation.title,
-                          );
-                        }}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-zinc-700 transition hover:bg-purple-500/10 hover:text-purple-300"
-                      >
-                        ✎
-                      </button>
+                  {item.label === "AI Coach" && (
+                    <span className="ml-auto rounded-full border border-purple-500/20 bg-purple-500/10 px-2 py-1 text-[9px] font-bold text-purple-300">
+                      PRO
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </nav>
 
-                      <button
-                        type="button"
-                        title="Delete conversation"
-                        onClick={() =>
-                          void deleteConversation(
-                            conversation.id,
-                          )
-                        }
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-zinc-700 transition hover:bg-red-500/10 hover:text-red-300"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+          <div className="mt-auto">
+            <Link
+              href="/pricing"
+              className="group block overflow-hidden rounded-3xl border border-purple-500/25 bg-gradient-to-br from-purple-700/30 via-violet-700/20 to-transparent p-5 transition duration-300 hover:scale-[1.02] hover:border-purple-400/40"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/20 text-xl text-purple-300 shadow-[0_0_20px_rgba(139,92,246,0.2)]">
+                ✦
+              </div>
 
-              {filteredConversations.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-white/[0.07] p-5 text-center">
-                  <p className="text-xs leading-5 text-zinc-700">
-                    {searchQuery
-                      ? "No conversations match your search."
-                      : "Your coaching conversations will appear here."}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+              <h3 className="mt-4 text-lg font-black text-white">
+                Unlock Zentro Pro
+              </h3>
 
-          <div className="absolute bottom-5 left-5 right-5 space-y-2">
-            {conversations.length > 0 && (
-              <button
-                type="button"
-                disabled={clearingConversations}
-                onClick={() =>
-                  void clearAllConversations()
-                }
-                className="w-full rounded-2xl border border-red-500/15 bg-red-500/[0.04] px-4 py-3 text-left text-sm font-bold text-red-300 disabled:opacity-50"
-              >
-                {clearingConversations
-                  ? "Clearing..."
-                  : "Clear all conversations"}
-              </button>
-            )}
+              <p className="mt-2 text-xs leading-6 text-zinc-400">
+                Unlock AI Coach, meal scanner, premium workout plans and advanced progress insights.
+              </p>
+
+              <div className="mt-5 rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-4 py-3 text-center text-sm font-bold text-white transition group-hover:from-purple-500 group-hover:to-violet-400">
+                Upgrade now →
+              </div>
+            </Link>
+
             <button
               type="button"
-              onClick={() => setShowSettings(true)}
-              className="w-full rounded-2xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-left text-sm font-bold text-zinc-400"
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="mt-4 flex w-full items-center justify-center rounded-2xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 text-sm font-semibold text-zinc-500 transition hover:border-red-500/20 hover:bg-red-500/[0.05] hover:text-red-300 disabled:opacity-50"
             >
-              Coach settings
+              {loggingOut ? "Logging out..." : "Log out"}
             </button>
-
-            <Link
-              href="/dashboard"
-              className="block rounded-2xl border border-white/[0.07] px-4 py-3 text-center text-sm font-bold text-zinc-500"
-            >
-              ← Dashboard
-            </Link>
           </div>
+
         </aside>
 
-        {sidebarOpen && (
-          <button
-            type="button"
-            aria-label="Close sidebar"
-            onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 z-30 bg-black/70 lg:hidden"
-          />
-        )}
+        <div className="w-full lg:pl-72">
+          {/* Mobile header */}
+          <header className="sticky top-0 z-20 flex items-center justify-between border-b border-white/[0.06] bg-[#08080c]/90 px-5 py-4 backdrop-blur-xl lg:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Open navigation menu"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-lg text-zinc-300"
+            >
+              ☰
+            </button>
 
-        <section className="flex min-h-screen min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between border-b border-white/[0.06] px-5 py-4 sm:px-8">
-            <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(true)}
-                className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.08] text-zinc-400 lg:hidden"
-              >
-                ☰
-              </button>
-
-              <div>
-                <p className="text-xs font-bold tracking-[0.18em] text-purple-400">
-                  ZENTRO INTELLIGENCE
-                </p>
-
-                <h1 className="mt-1 text-lg font-black sm:text-xl">
-                  AI Performance Coach
-                </h1>
+            <Link href="/dashboard" className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/15 font-black text-purple-300">
+                Z
               </div>
-            </div>
 
-            <div className="flex items-center gap-3">
-              {messages.length > 0 && (
-                <button
-                  type="button"
-                  onClick={exportConversation}
-                  className="hidden rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-2 text-xs font-bold text-zinc-400 transition hover:border-purple-500/25 hover:text-white sm:block"
-                >
-                  Export chat
-                </button>
-              )}
+              <span className="font-black tracking-[0.2em]">
+                ZENTRO
+              </span>
+            </Link>
 
-              <div className="rounded-2xl border border-purple-500/15 bg-purple-500/[0.06] px-4 py-2 text-right">
-                <p className="text-[9px] font-bold tracking-[0.12em] text-purple-400">
-                  DAILY AI LIMIT
-                </p>
-
-                <p className="mt-1 text-xs font-black">
-                  {coachUsage.remaining}/{coachUsage.limit} left
-                </p>
-              </div>
-            </div>
+            <Link
+              href="/profile"
+              aria-label="Open profile"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03]"
+            >
+              ○
+            </Link>
           </header>
 
-          {message && (
-            <div
-              className={`mx-5 mt-5 rounded-2xl border p-4 text-sm sm:mx-8 ${
-                messageType === "error"
-                  ? "border-red-500/20 bg-red-500/10 text-red-200"
-                  : "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
-              }`}
-            >
-              {message}
-            </div>
+          {/* Mobile navigation drawer */}
+          {mobileMenuOpen && (
+            <>
+              <button
+                type="button"
+                aria-label="Close navigation menu"
+                onClick={() => setMobileMenuOpen(false)}
+                className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm lg:hidden"
+              />
+
+              <aside className="fixed inset-y-0 left-0 z-50 flex w-[86%] max-w-[340px] flex-col border-r border-white/[0.08] bg-[#08080c] p-5 shadow-2xl lg:hidden">
+                <div className="flex items-center justify-between">
+                  <Link
+                    href="/dashboard"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3"
+                  >
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-purple-400/25 bg-purple-500/10 text-lg font-black text-purple-300">
+                      Z
+                    </div>
+
+                    <div>
+                      <p className="font-black tracking-[0.2em]">ZENTRO</p>
+                      <p className="mt-1 text-[9px] tracking-[0.16em] text-zinc-600">
+                        FITNESS INTELLIGENCE
+                      </p>
+                    </div>
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => setMobileMenuOpen(false)}
+                    aria-label="Close navigation menu"
+                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-xl text-zinc-500"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <nav className="mt-8 space-y-2">
+                  {navigation.map((item, index) => {
+                    const active = index === 0;
+
+                    return (
+                      <Link
+                        key={item.label}
+                        href={item.href}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className={`group flex items-center gap-4 rounded-2xl px-4 py-3.5 text-sm font-semibold transition ${
+                          active
+                            ? "border border-purple-500/20 bg-purple-500/10 text-white"
+                            : "border border-transparent text-zinc-500 hover:border-white/[0.06] hover:bg-white/[0.03] hover:text-white"
+                        }`}
+                      >
+                        <span
+                          className={`flex h-9 w-9 items-center justify-center rounded-xl text-base ${
+                            active
+                              ? "bg-purple-500/15 text-purple-300"
+                              : "bg-white/[0.03] text-zinc-600 group-hover:text-purple-300"
+                          }`}
+                        >
+                          {item.icon}
+                        </span>
+
+                        {item.label}
+
+                        {item.label === "AI Coach" && (
+                          <span className="ml-auto rounded-full border border-purple-500/20 bg-purple-500/10 px-2 py-1 text-[9px] font-bold text-purple-300">
+                            PRO
+                          </span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </nav>
+
+                <div className="mt-auto space-y-3">
+                  <Link
+                    href="/pricing"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="block rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 py-4 text-center text-sm font-bold"
+                  >
+                    Upgrade to Zentro Pro
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setMobileMenuOpen(false);
+                      await handleLogout();
+                    }}
+                    disabled={loggingOut}
+                    className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.025] px-5 py-4 text-sm font-bold text-zinc-400 disabled:opacity-50"
+                  >
+                    {loggingOut ? "Logging out..." : "Log out"}
+                  </button>
+                </div>
+              </aside>
+            </>
           )}
 
-          <div className="flex-1 overflow-y-auto px-5 py-7 sm:px-8">
-            <div className="mx-auto max-w-5xl">
-              {!activeConversationId &&
-                messages.length === 0 && (
-                  <section className="pb-10 pt-5 text-center sm:pt-12">
-                    <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] border border-purple-500/25 bg-purple-500/12 text-2xl font-black text-purple-300 shadow-[0_0_50px_rgba(139,92,246,0.16)]">
-                      AI
+          <div className="mx-auto max-w-[1500px] px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
+            {/* Top header */}
+            <header className="flex flex-col justify-between gap-6 sm:flex-row sm:items-center">
+              <div>
+                <p className="text-xs font-bold tracking-[0.22em] text-purple-400">
+                  PERSONAL DASHBOARD
+                </p>
+
+                <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
+                  Welcome back, {getFirstName(profile)}
+                </h1>
+
+                <p className="mt-2 text-sm text-zinc-500">
+                  Your plan is ready. Stay consistent and keep moving.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Link
+                  href="/onboarding"
+                  className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-3 text-sm font-semibold text-zinc-300 transition hover:border-purple-500/30 hover:bg-purple-500/[0.06]"
+                >
+                  Edit plan
+                </Link>
+
+                <Link
+                  href="/programs"
+                  className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 py-3 text-sm font-bold shadow-[0_0_30px_rgba(139,92,246,0.2)] transition hover:scale-[1.02]"
+                >
+                  Start workout
+                </Link>
+              </div>
+            </header>
+
+            {/* Main stats */}
+            <section className="mt-9 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+              <article className="group rounded-3xl border border-purple-500/20 bg-gradient-to-br from-purple-600/15 via-purple-950/10 to-transparent p-6 transition hover:-translate-y-1 hover:border-purple-500/35">
+                <div className="flex items-center justify-between">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-300">
+                    ◎
+                  </div>
+
+                  <span className="rounded-full bg-purple-500/10 px-3 py-1 text-[10px] font-bold text-purple-300">
+                    DAILY TARGET
+                  </span>
+                </div>
+
+                <p className="mt-6 text-sm text-zinc-500">
+                  Calories
+                </p>
+
+                <div className="mt-2 flex items-end gap-2">
+                  <p className="text-3xl font-black">
+                    {calorieTarget.toLocaleString()}
+                  </p>
+
+                  <span className="pb-1 text-sm text-zinc-500">
+                    kcal
+                  </span>
+                </div>
+
+                <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-purple-600 to-fuchsia-500"
+                    style={{
+                      width: `${caloriePercentage}%`,
+                    }}
+                  />
+                </div>
+
+                <p className="mt-3 text-xs text-zinc-600">
+                  {consumedCalories.toLocaleString()} consumed today
+                </p>
+              </article>
+
+              <article className="group rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition hover:-translate-y-1 hover:border-purple-500/25">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-300">
+                  ◈
+                </div>
+
+                <p className="mt-6 text-sm text-zinc-500">
+                  Current goal
+                </p>
+
+                <p className="mt-2 text-2xl font-black">
+                  {getGoalName(profile?.goal)}
+                </p>
+
+                <p className="mt-3 text-xs leading-5 text-zinc-600">
+                  {getGoalDescription(profile?.goal)}
+                </p>
+              </article>
+
+              <article className="group rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition hover:-translate-y-1 hover:border-purple-500/25">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-fuchsia-500/10 text-fuchsia-300">
+                  ↗
+                </div>
+
+                <p className="mt-6 text-sm text-zinc-500">
+                  Training frequency
+                </p>
+
+                <div className="mt-2 flex items-end gap-2">
+                  <p className="text-3xl font-black">
+                    {profile?.training_days ?? 0}
+                  </p>
+
+                  <span className="pb-1 text-sm text-zinc-500">
+                    days / week
+                  </span>
+                </div>
+
+                <p className="mt-3 text-xs text-zinc-600">
+                  {profile?.experience ?? "Beginner"} level
+                </p>
+              </article>
+
+              <article className="group rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition hover:-translate-y-1 hover:border-purple-500/25">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300">
+                  ✓
+                </div>
+
+                <p className="mt-6 text-sm text-zinc-500">
+                  Weekly completion
+                </p>
+
+                <div className="mt-2 flex items-end gap-2">
+                  <p className="text-3xl font-black">
+                    {completedWorkouts}
+                  </p>
+
+                  <span className="pb-1 text-sm text-zinc-500">
+                    workouts
+                  </span>
+                </div>
+
+                <p className="mt-3 text-xs text-emerald-400">
+                  Great consistency this week
+                </p>
+              </article>
+            </section>
+
+            <section className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+              {/* Today's workout */}
+              <article className="relative overflow-hidden rounded-[32px] border border-purple-500/15 bg-[#0b0b10]/90 p-6 sm:p-8">
+                <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-purple-600/15 blur-[80px]" />
+
+                <div className="relative">
+                  <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-start">
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-3 py-1.5 text-[10px] font-bold tracking-[0.14em] text-purple-300">
+                          TODAY&apos;S WORKOUT
+                        </span>
+
+                        <span className="flex items-center gap-2 text-xs text-zinc-500">
+                          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                          Ready
+                        </span>
+                      </div>
+
+                      <h2 className="mt-5 text-3xl font-black sm:text-4xl">
+                        {getWorkoutName(profile?.goal)}
+                      </h2>
+
+                      <p className="mt-3 max-w-xl leading-7 text-zinc-400">
+                        A focused session personalized to your current
+                        goal and experience level.
+                      </p>
                     </div>
 
-                    <p className="mt-7 text-xs font-bold tracking-[0.22em] text-purple-400">
-                      PERSONAL FITNESS INTELLIGENCE
+                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-3xl border border-purple-400/20 bg-purple-500/10 text-3xl text-purple-300 shadow-[0_0_35px_rgba(139,92,246,0.15)]">
+                      ◈
+                    </div>
+                  </div>
+
+                  <div className="mt-8 grid grid-cols-3 gap-3">
+                    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4">
+                      <p className="text-xs text-zinc-600">
+                        Duration
+                      </p>
+
+                      <p className="mt-2 font-bold">50 min</p>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4">
+                      <p className="text-xs text-zinc-600">
+                        Exercises
+                      </p>
+
+                      <p className="mt-2 font-bold">7</p>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4">
+                      <p className="text-xs text-zinc-600">
+                        Intensity
+                      </p>
+
+                      <p className="mt-2 font-bold">Moderate</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                    <Link
+                      href="/programs"
+                      className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-7 py-4 text-center text-sm font-bold shadow-[0_0_35px_rgba(139,92,246,0.2)] transition hover:scale-[1.02]"
+                    >
+                      Start workout →
+                    </Link>
+
+                    <Link
+                      href="/programs"
+                      className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-7 py-4 text-center text-sm font-bold text-zinc-300 transition hover:border-purple-500/30"
+                    >
+                      View exercises
+                    </Link>
+                  </div>
+                </div>
+              </article>
+
+              {/* Weekly activity */}
+              <article className="rounded-[32px] border border-white/[0.07] bg-[#0b0b10]/90 p-6 sm:p-8">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-sm text-zinc-500">
+                      Weekly activity
                     </p>
 
-                    <h2 className="mx-auto mt-4 max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">
-                      Ask about your real progress.
+                    <h2 className="mt-2 text-2xl font-black">
+                      {completedWorkouts} sessions
                     </h2>
+                  </div>
 
-                    <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-zinc-500 sm:text-base">
-                      Zentro analyzes your workouts, nutrition,
-                      measurements, records and consistency to give
-                      practical personalized guidance.
+                  <span className="rounded-full bg-emerald-500/10 px-3 py-1.5 text-[10px] font-bold text-emerald-300">
+                    ON TRACK
+                  </span>
+                </div>
+
+                <div className="mt-8 flex justify-between gap-2">
+                  {weekDays.map((item) => (
+                    <div
+                      key={item.day}
+                      className="flex flex-1 flex-col items-center gap-3"
+                    >
+                      <div
+                        className={`flex h-10 w-10 items-center justify-center rounded-xl border text-xs font-bold ${
+                          item.completed
+                            ? "border-purple-500/35 bg-purple-500/15 text-purple-200 shadow-[0_0_15px_rgba(139,92,246,0.12)]"
+                            : "border-white/[0.06] bg-white/[0.02] text-zinc-700"
+                        }`}
+                      >
+                        {item.completed ? "✓" : "·"}
+                      </div>
+
+                      <span className="text-[10px] text-zinc-600">
+                        {item.day}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-8 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-500">
+                      Weekly target
+                    </span>
+
+                    <span className="font-bold text-purple-300">
+                      {completedWorkouts}/
+                      {profile?.training_days ?? 4}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-purple-600 to-violet-400"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          (completedWorkouts /
+                            Math.max(
+                              profile?.training_days ?? 4,
+                              1,
+                            )) *
+                            100,
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </article>
+            </section>
+
+            <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_0.75fr]">
+              {/* Nutrition */}
+              <article className="rounded-[32px] border border-white/[0.07] bg-[#0b0b10]/90 p-6 sm:p-8">
+                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                  <div>
+                    <p className="text-sm text-zinc-500">
+                      Today&apos;s nutrition
                     </p>
 
-                    <div className="mt-10 grid gap-4 text-left md:grid-cols-2 xl:grid-cols-3">
-                      {quickPrompts.map((item) => (
-                        <button
-                          key={item.title}
-                          type="button"
-                          disabled={
-                            sending ||
-                            coachUsage.remaining <= 0
-                          }
-                          onClick={() =>
-                            void sendMessage(
-                              undefined,
-                              item.prompt,
-                            )
-                          }
-                          className="group rounded-[28px] border border-white/[0.07] bg-white/[0.025] p-5 transition hover:-translate-y-1 hover:border-purple-500/25 hover:bg-purple-500/[0.05] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
-                        >
-                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-500/10 text-xs font-black text-purple-300">
-                            {item.icon}
-                          </div>
+                    <h2 className="mt-2 text-2xl font-black">
+                      Macro targets
+                    </h2>
+                  </div>
 
-                          <h3 className="mt-5 font-black">
-                            {item.title}
-                          </h3>
+                  <Link
+                    href="/nutrition/tracker"
+                    className="text-sm font-bold text-purple-400 transition hover:text-purple-300"
+                  >
+                    Open nutrition →
+                  </Link>
+                </div>
 
-                          <p className="mt-2 text-sm leading-6 text-zinc-600">
-                            {item.description}
-                          </p>
+                <div className="mt-8 grid gap-4 md:grid-cols-3">
+                  <MacroCard
+                    label="Protein"
+                    consumed={consumedProtein}
+                    target={proteinTarget}
+                    unit="g"
+                    icon="P"
+                  />
 
-                          <p className="mt-4 text-xs font-bold text-purple-400">
-                            Ask coach →
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                )}
+                  <MacroCard
+                    label="Carbs"
+                    consumed={consumedCarbs}
+                    target={carbsTarget}
+                    unit="g"
+                    icon="C"
+                  />
 
-              {loadingMessages && (
-                <div className="flex min-h-[400px] items-center justify-center">
-                  <div className="text-center">
-                    <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+                  <MacroCard
+                    label="Fats"
+                    consumed={consumedFat}
+                    target={fatTarget}
+                    unit="g"
+                    icon="F"
+                  />
+                </div>
+              </article>
 
-                    <p className="mt-4 text-sm text-zinc-600">
-                      Loading conversation...
+              {/* Profile overview */}
+              <article className="rounded-[32px] border border-white/[0.07] bg-[#0b0b10]/90 p-6 sm:p-8">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-violet-500 text-xl font-black shadow-[0_0_30px_rgba(139,92,246,0.2)]">
+                    {getFirstName(profile).charAt(0).toUpperCase()}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="truncate text-lg font-bold">
+                      {profile?.full_name || "Zentro Athlete"}
+                    </p>
+
+                    <p className="truncate text-sm text-zinc-500">
+                      {email}
                     </p>
                   </div>
                 </div>
-              )}
 
-              {!loadingMessages &&
-                messages.length > 0 && (
-                  <div className="space-y-6 pb-5">
-                    {messages.map((chatMessage) => (
-                      <article
-                        key={chatMessage.id}
-                        className={`flex gap-4 ${
-                          chatMessage.role === "user"
-                            ? "justify-end"
-                            : "justify-start"
-                        }`}
+                <div className="mt-7 space-y-4">
+                  <ProfileRow
+                    label="Weight"
+                    value={`${profile?.weight_kg ?? "—"} kg`}
+                  />
+
+                  <ProfileRow
+                    label="Height"
+                    value={`${profile?.height_cm ?? "—"} cm`}
+                  />
+
+                  <ProfileRow
+                    label="Activity"
+                    value={getActivityName(profile?.activity)}
+                  />
+
+                  <ProfileRow
+                    label="Experience"
+                    value={
+                      profile?.experience
+                        ? profile.experience.charAt(0).toUpperCase() +
+                          profile.experience.slice(1)
+                        : "Not selected"
+                    }
+                  />
+                </div>
+
+                <Link
+                  href="/profile"
+                  className="mt-7 block rounded-2xl border border-white/[0.08] bg-white/[0.025] px-5 py-3 text-center text-sm font-bold text-zinc-300 transition hover:border-purple-500/30 hover:bg-purple-500/[0.05]"
+                >
+                  Manage profile
+                </Link>
+              </article>
+            </section>
+
+            {/* Real nutrition insights */}
+            <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_0.85fr]">
+              <article className="rounded-[32px] border border-white/[0.07] bg-[#0b0b10]/90 p-6 sm:p-8">
+                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                  <div>
+                    <p className="text-sm text-zinc-500">
+                      Last 7 days
+                    </p>
+
+                    <h2 className="mt-2 text-2xl font-black">
+                      Calorie activity
+                    </h2>
+                  </div>
+
+                  <Link
+                    href="/nutrition/tracker"
+                    className="text-sm font-bold text-purple-400 transition hover:text-purple-300"
+                  >
+                    Open tracker →
+                  </Link>
+                </div>
+
+                <div className="mt-8 flex h-48 items-end gap-3">
+                  {lastSevenDays.map((day) => {
+                    const height = Math.max(
+                      6,
+                      Math.round(
+                        (day.calories /
+                          maximumWeeklyCalories) *
+                          100,
+                      ),
+                    );
+
+                    return (
+                      <div
+                        key={day.dateKey}
+                        className="flex min-w-0 flex-1 flex-col items-center gap-3"
                       >
-                        {chatMessage.role === "assistant" && (
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-purple-500/12 text-xs font-black text-purple-300">
-                            AI
-                          </div>
-                        )}
+                        <div className="flex h-36 w-full items-end rounded-2xl bg-white/[0.025] p-1.5">
+                          <div
+                            className="w-full rounded-xl bg-gradient-to-t from-purple-600 to-violet-400 transition-all duration-500"
+                            style={{
+                              height: `${height}%`,
+                            }}
+                          />
+                        </div>
 
-                        <div
-                          className={`max-w-[88%] rounded-[26px] px-5 py-4 sm:max-w-[78%] sm:px-6 ${
-                            chatMessage.role === "user"
-                              ? "rounded-br-md bg-gradient-to-r from-purple-600 to-violet-500 text-white"
-                              : "rounded-bl-md border border-white/[0.07] bg-[#0b0b10]/90 text-zinc-300"
-                          }`}
-                        >
-                          <div className="whitespace-pre-wrap text-sm leading-7">
-                            {chatMessage.content}
-                          </div>
+                        <div className="text-center">
+                          <p className="text-[10px] font-bold text-zinc-500">
+                            {day.label}
+                          </p>
 
-                          <p
-                            className={`mt-3 text-[10px] ${
-                              chatMessage.role === "user"
-                                ? "text-white/60"
-                                : "text-zinc-700"
-                            }`}
-                          >
-                            {formatMessageDate(
-                              chatMessage.created_at,
+                          <p className="mt-1 text-[9px] text-zinc-700">
+                            {day.calories}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </article>
+
+              <article className="rounded-[32px] border border-emerald-500/15 bg-gradient-to-br from-emerald-500/[0.06] to-[#0b0b10] p-6 sm:p-8">
+                <div className="flex items-start justify-between gap-5">
+                  <div>
+                    <p className="text-xs font-bold tracking-[0.18em] text-emerald-400">
+                      TODAY&apos;S PROGRESS
+                    </p>
+
+                    <h2 className="mt-3 text-2xl font-black">
+                      Real nutrition stats
+                    </h2>
+                  </div>
+
+                  <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-bold text-emerald-300">
+                    LIVE
+                  </span>
+                </div>
+
+                <div className="mt-7 grid grid-cols-2 gap-3">
+                  <DashboardStat
+                    label="Meals logged"
+                    value={`${todayMeals.length}`}
+                  />
+
+                  <DashboardStat
+                    label="Completed"
+                    value={`${completedMealsToday}`}
+                  />
+
+                  <DashboardStat
+                    label="Calories left"
+                    value={`${Math.max(
+                      calorieTarget - consumedCalories,
+                      0,
+                    )} kcal`}
+                  />
+
+                  <DashboardStat
+                    label="Nutrition streak"
+                    value={`${nutritionStreak} days`}
+                  />
+                </div>
+
+                <div className="mt-6 border-t border-white/[0.06] pt-6">
+                  {latestFoodScan ? (
+                    <Link
+                      href="/nutrition/history"
+                      className="group block rounded-2xl border border-white/[0.06] bg-black/20 p-5 transition hover:border-emerald-500/20"
+                    >
+                      <p className="text-xs font-bold tracking-[0.14em] text-zinc-600">
+                        LATEST AI FOOD SCAN
+                      </p>
+
+                      <div className="mt-3 flex items-end justify-between gap-5">
+                        <div>
+                          <p className="text-lg font-black">
+                            {latestFoodScan.meal_name}
+                          </p>
+
+                          <p className="mt-2 text-xs text-zinc-600">
+                            {formatRelativeTime(
+                              latestFoodScan.scanned_at,
                             )}
                           </p>
                         </div>
-                      </article>
-                    ))}
 
-                    {sending && (
-                      <article className="flex gap-4">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-purple-500/12 text-xs font-black text-purple-300">
-                          AI
+                        <div className="text-right">
+                          <p className="text-xl font-black text-emerald-300">
+                            {Math.round(
+                              Number(
+                                latestFoodScan.total_calories,
+                              ),
+                            )}
+                          </p>
+
+                          <p className="text-xs text-zinc-600">
+                            kcal
+                          </p>
                         </div>
+                      </div>
 
-                        <div className="rounded-[26px] rounded-bl-md border border-white/[0.07] bg-[#0b0b10]/90 px-6 py-5">
-                          <div className="flex gap-1.5">
-                            <span className="h-2 w-2 animate-bounce rounded-full bg-purple-400 [animation-delay:-0.3s]" />
-                            <span className="h-2 w-2 animate-bounce rounded-full bg-purple-400 [animation-delay:-0.15s]" />
-                            <span className="h-2 w-2 animate-bounce rounded-full bg-purple-400" />
-                          </div>
-                        </div>
-                      </article>
-                    )}
-
-                    <div ref={messagesEndRef} />
-                  </div>
-                )}
-            </div>
-          </div>
-
-          <div className="border-t border-white/[0.06] bg-[#07070a]/90 px-5 py-5 backdrop-blur-xl sm:px-8">
-            <form
-              onSubmit={(event) => void sendMessage(event)}
-              className="mx-auto max-w-5xl"
-            >
-              <div className="flex items-end gap-3 rounded-[26px] border border-white/[0.09] bg-white/[0.035] p-3 focus-within:border-purple-500/35">
-                <textarea
-                  value={input}
-                  onChange={(event) =>
-                    setInput(event.target.value)
-                  }
-                  onKeyDown={(event) => {
-                    if (
-                      event.key === "Enter" &&
-                      !event.shiftKey
-                    ) {
-                      event.preventDefault();
-                      void sendMessage();
-                    }
-                  }}
-                  rows={1}
-                  maxLength={4000}
-                  disabled={coachUsage.remaining <= 0}
-                  placeholder={
-                    coachUsage.remaining <= 0
-                      ? "Daily AI Coach limit reached."
-                      : "Ask about your workouts, nutrition, progress or recovery..."
-                  }
-                  className="max-h-40 min-h-[48px] flex-1 resize-none bg-transparent px-3 py-3 text-sm leading-6 outline-none placeholder:text-zinc-700"
-                />
-
-                <button
-                  type="submit"
-                  disabled={
-                    !input.trim() ||
-                    sending ||
-                    coachUsage.remaining <= 0
-                  }
-                  className="flex h-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-35"
-                >
-                  {sending
-                    ? "..."
-                    : coachUsage.remaining <= 0
-                      ? "Limit reached"
-                      : "Send"}
-                </button>
-              </div>
-
-              <div className="mt-3 flex items-center justify-between gap-4 px-2">
-                <p className="text-[10px] leading-5 text-zinc-700">
-                  Zentro AI provides general fitness guidance and does
-                  not replace qualified medical care.
-                </p>
-
-                <div className="flex shrink-0 items-center gap-3">
-                  <p className="text-[10px] text-purple-400">
-                    {coachUsage.remaining} messages left today
-                  </p>
-
-                  <p className="text-[10px] text-zinc-700">
-                    {input.length}/4000
-                  </p>
+                      <p className="mt-4 text-sm font-bold text-emerald-400 transition group-hover:translate-x-1">
+                        View details →
+                      </p>
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/nutrition/scan"
+                      className="block rounded-2xl border border-dashed border-white/[0.08] p-5 text-center text-sm font-bold text-purple-400"
+                    >
+                      Scan your first meal →
+                    </Link>
+                  )}
                 </div>
-              </div>
-            </form>
-          </div>
-        </section>
-      </div>
+              </article>
+            </section>
 
-      {renamingConversationId && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-5 backdrop-blur-md"
-          onClick={() => {
-            setRenamingConversationId(null);
-            setRenameValue("");
-          }}
-        >
-          <section
-            className="w-full max-w-md rounded-[34px] border border-white/10 bg-[#0b0b10] p-7 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <p className="text-xs font-bold tracking-[0.2em] text-purple-400">
-              RENAME CONVERSATION
-            </p>
+            {/* AI usage and meal scanner */}
+            <section className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+              <article className="rounded-[32px] border border-purple-500/20 bg-gradient-to-br from-purple-600/15 via-purple-950/10 to-[#0b0b10] p-6 sm:p-8">
+                <div className="flex items-start justify-between gap-5">
+                  <div>
+                    <p className="text-xs font-bold tracking-[0.18em] text-purple-400">
+                      ZENTRO PRO AI
+                    </p>
 
-            <h2 className="mt-3 text-2xl font-black">
-              Update chat title
-            </h2>
+                    <h2 className="mt-3 text-2xl font-black">
+                      Daily AI allowance
+                    </h2>
 
-            <input
-              autoFocus
-              maxLength={80}
-              value={renameValue}
-              onChange={(event) =>
-                setRenameValue(event.target.value)
-              }
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  void renameConversation();
-                }
-              }}
-              className="mt-6 w-full rounded-2xl border border-white/10 bg-black/40 px-5 py-4 outline-none focus:border-purple-500/50"
-            />
+                    <p className="mt-3 text-sm leading-6 text-zinc-500">
+                      Your limits reset automatically every day.
+                    </p>
+                  </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setRenamingConversationId(null);
-                  setRenameValue("");
-                }}
-                className="rounded-2xl border border-white/[0.08] px-5 py-4 font-bold text-zinc-400"
+                  <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-3 py-1.5 text-[10px] font-bold text-purple-300">
+                    PRO
+                  </span>
+                </div>
+
+                <div className="mt-7 grid gap-4 sm:grid-cols-2">
+                  <AIUsageCard
+                    label="AI Coach"
+                    used={aiUsage.coach_messages_used}
+                    limit={15}
+                    remaining={coachMessagesRemaining}
+                    href="/coach"
+                    icon="✦"
+                  />
+
+                  <AIUsageCard
+                    label="Food scans"
+                    used={aiUsage.food_scans_used}
+                    limit={2}
+                    remaining={foodScansRemaining}
+                    href="/nutrition/scan"
+                    icon="◎"
+                  />
+                </div>
+              </article>
+
+              <Link
+                href="/nutrition/scan"
+                className="group relative overflow-hidden rounded-[32px] border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-[#0b0b10] to-[#0b0b10] p-6 transition hover:-translate-y-1 hover:border-emerald-400/35 sm:p-8"
               >
-                Cancel
-              </button>
+                <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-emerald-500/10 blur-[70px]" />
 
-              <button
-                type="button"
-                onClick={() => void renameConversation()}
-                className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 py-4 font-bold"
-              >
-                Save title
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+                <div className="relative flex h-full flex-col justify-between gap-8">
+                  <div className="flex items-start justify-between gap-5">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-500/20 bg-emerald-500/10 text-2xl text-emerald-300">
+                      ◉
+                    </div>
 
-      {showSettings && (
-        <div
-          className="fixed inset-0 z-50 overflow-y-auto bg-black/85 px-5 py-10 backdrop-blur-md"
-          onClick={() => setShowSettings(false)}
-        >
-          <section
-            className="mx-auto w-full max-w-2xl rounded-[34px] border border-white/10 bg-[#0b0b10] p-7 shadow-2xl sm:p-9"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-5">
-              <div>
-                <p className="text-xs font-bold tracking-[0.2em] text-purple-400">
-                  COACH SETTINGS
+                    <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-3 py-1.5 text-[10px] font-bold text-purple-300">
+                      AI POWERED
+                    </span>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-bold tracking-[0.18em] text-emerald-400">
+                      SMART NUTRITION
+                    </p>
+
+                    <h2 className="mt-3 text-3xl font-black">
+                      Scan your meal
+                    </h2>
+
+                    <p className="mt-4 max-w-xl leading-7 text-zinc-500">
+                      Take a photo of your food and get an instant estimate
+                      of calories, protein, carbs, fats and ingredients.
+                    </p>
+
+                    <div className="mt-6 flex items-center justify-between gap-4">
+                      <span className="text-sm font-bold text-emerald-300">
+                        {foodScansRemaining}/2 scans remaining today
+                      </span>
+
+                      <span className="text-sm font-bold text-white transition group-hover:translate-x-1">
+                        Open scanner →
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            </section>
+
+            {/* Quick actions */}
+            <section className="mt-6">
+              <div className="mb-5">
+                <p className="text-sm font-bold tracking-[0.18em] text-purple-400">
+                  QUICK ACTIONS
                 </p>
 
-                <h2 className="mt-3 text-3xl font-black">
-                  Personalize your AI Coach
+                <h2 className="mt-2 text-2xl font-black">
+                  Continue your journey
                 </h2>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowSettings(false)}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 text-xl text-zinc-500"
-              >
-                ×
-              </button>
-            </div>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <QuickAction
+                  href="/programs"
+                  icon="◈"
+                  title="Browse workouts"
+                  description="Explore structured fitness programs."
+                />
 
-            <div className="mt-8 grid gap-5 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm text-zinc-400">
-                  Coaching style
-                </label>
+                <QuickAction
+                  href="/nutrition/tracker"
+                  icon="◎"
+                  title="Nutrition plan"
+                  description="View meals and daily macro targets."
+                />
 
-                <select
-                  value={preferences.coaching_style}
-                  onChange={(event) =>
-                    updatePreference(
-                      "coaching_style",
-                      event.target
-                        .value as CoachPreferences["coaching_style"],
-                    )
-                  }
-                  className="w-full rounded-2xl border border-white/10 bg-black px-5 py-4 outline-none focus:border-purple-500/50"
-                >
-                  <option value="supportive">Supportive</option>
-                  <option value="balanced">Balanced</option>
-                  <option value="direct">Direct</option>
-                  <option value="intense">Intense</option>
-                </select>
+                <QuickAction
+                  href="/progress"
+                  icon="↗"
+                  title="Track progress"
+                  description="Record weight and body measurements."
+                />
+
+                <QuickAction
+                  href="/coach"
+                  icon="✦"
+                  title="Ask AI Coach"
+                  description="Get guidance based on your goal."
+                  pro
+                />
+
+                <QuickAction
+                  href="/nutrition/scan"
+                  icon="◉"
+                  title="Scan your meal"
+                  description="Estimate calories and macros from a photo."
+                  pro
+                />
+
+                <QuickAction
+                  href="/nutrition/history"
+                  icon="◌"
+                  title="Nutrition history"
+                  description="View your scanned meals and calorie history."
+                  pro
+                />
+
+                <QuickAction
+                  href="/community"
+                  icon="◉"
+                  title="Zentro-Community"
+                  description="Share progress, post updates, follow athletes and join discussions."
+                />
+
+                <QuickAction
+                  href="/workout-builder"
+                  icon="⚡"
+                  title="Workout Builder"
+                  description="Build a personalized workout based on your goal, experience and available equipment."
+                  pro
+                />
               </div>
+            </section>
 
-              <div>
-                <label className="mb-2 block text-sm text-zinc-400">
-                  Response length
-                </label>
+            <footer className="mt-10 flex flex-col justify-between gap-4 border-t border-white/[0.05] py-7 text-xs text-zinc-700 sm:flex-row">
+              <p>© 2026 ZENTRO. Train. Fuel. Evolve.</p>
 
-                <select
-                  value={preferences.response_length}
-                  onChange={(event) =>
-                    updatePreference(
-                      "response_length",
-                      event.target
-                        .value as CoachPreferences["response_length"],
-                    )
-                  }
-                  className="w-full rounded-2xl border border-white/10 bg-black px-5 py-4 outline-none focus:border-purple-500/50"
-                >
-                  <option value="short">Short</option>
-                  <option value="detailed">Detailed</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-7 space-y-4">
-              <SettingsToggle
-                title="Workout information"
-                description="Allow the coach to analyze workouts, sets, RPE and personal records."
-                checked={preferences.include_workout_data}
-                onChange={(value) =>
-                  updatePreference(
-                    "include_workout_data",
-                    value,
-                  )
-                }
-              />
-
-              <SettingsToggle
-                title="Nutrition information"
-                description="Allow analysis of calories, macros and nutrition consistency."
-                checked={preferences.include_nutrition_data}
-                onChange={(value) =>
-                  updatePreference(
-                    "include_nutrition_data",
-                    value,
-                  )
-                }
-              />
-
-              <SettingsToggle
-                title="Progress information"
-                description="Allow analysis of body weight and measurement trends."
-                checked={preferences.include_progress_data}
-                onChange={(value) =>
-                  updatePreference(
-                    "include_progress_data",
-                    value,
-                  )
-                }
-              />
-            </div>
-
-            <div className="mt-8 grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setShowSettings(false)}
-                className="rounded-2xl border border-white/[0.08] px-6 py-4 font-bold text-zinc-400"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                disabled={savingPreferences}
-                onClick={() => void savePreferences()}
-                className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-6 py-4 font-bold disabled:opacity-50"
-              >
-                {savingPreferences
-                  ? "Saving..."
-                  : "Save settings"}
-              </button>
-            </div>
-          </section>
+              <p>
+                Fitness estimates are informational and not medical advice.
+              </p>
+            </footer>
+          </div>
         </div>
-      )}
+      </div>
     </main>
   );
 }
 
-function SettingsToggle({
-  title,
-  description,
-  checked,
-  onChange,
+function DashboardStat({
+  label,
+  value,
 }: {
-  title: string;
-  description: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
+  label: string;
+  value: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
-      <div>
-        <p className="font-bold">{title}</p>
+    <div className="rounded-2xl border border-white/[0.06] bg-black/20 p-4">
+      <p className="text-[10px] text-zinc-600">
+        {label}
+      </p>
 
-        <p className="mt-2 text-sm leading-6 text-zinc-600">
-          {description}
-        </p>
+      <p className="mt-2 text-lg font-black">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+type AIUsageCardProps = {
+  label: string;
+  used: number;
+  limit: number;
+  remaining: number;
+  href: string;
+  icon: string;
+};
+
+function AIUsageCard({
+  label,
+  used,
+  limit,
+  remaining,
+  href,
+  icon,
+}: AIUsageCardProps) {
+  const percentage = Math.min(
+    100,
+    Math.round((used / Math.max(limit, 1)) * 100),
+  );
+
+  return (
+    <Link
+      href={href}
+      className="rounded-3xl border border-white/[0.07] bg-black/20 p-5 transition hover:border-purple-500/30 hover:bg-purple-500/[0.04]"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/10 font-black text-purple-300">
+          {icon}
+        </div>
+
+        <span className="text-xs font-bold text-zinc-500">
+          {remaining} left
+        </span>
       </div>
 
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={`relative h-7 w-12 shrink-0 rounded-full transition ${
-          checked ? "bg-purple-600" : "bg-zinc-800"
-        }`}
-      >
-        <span
-          className={`absolute top-1 h-5 w-5 rounded-full bg-white transition ${
-            checked ? "left-6" : "left-1"
-          }`}
+      <p className="mt-5 font-bold">{label}</p>
+
+      <p className="mt-2 text-sm text-zinc-600">
+        {used}/{limit} used today
+      </p>
+
+      <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-purple-600 to-violet-400"
+          style={{ width: `${percentage}%` }}
         />
-      </button>
+      </div>
+    </Link>
+  );
+}
+
+type MacroCardProps = {
+  label: string;
+  consumed: number;
+  target: number;
+  unit: string;
+  icon: string;
+};
+
+function MacroCard({
+  label,
+  consumed,
+  target,
+  unit,
+  icon,
+}: MacroCardProps) {
+  const percentage =
+    target > 0
+      ? Math.min(100, Math.round((consumed / target) * 100))
+      : 0;
+
+  return (
+    <div className="rounded-3xl border border-white/[0.06] bg-white/[0.025] p-5">
+      <div className="flex items-center justify-between">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/10 text-sm font-black text-purple-300">
+          {icon}
+        </div>
+
+        <span className="text-xs font-bold text-zinc-600">
+          {percentage}%
+        </span>
+      </div>
+
+      <p className="mt-5 text-sm text-zinc-500">{label}</p>
+
+      <p className="mt-2 text-xl font-black">
+        {consumed}
+        <span className="ml-1 text-xs font-normal text-zinc-600">
+          / {target} {unit}
+        </span>
+      </p>
+
+      <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-purple-600 to-violet-400"
+          style={{
+            width: `${percentage}%`,
+          }}
+        />
+      </div>
     </div>
+  );
+}
+
+type ProfileRowProps = {
+  label: string;
+  value: string;
+};
+
+function ProfileRow({ label, value }: ProfileRowProps) {
+  return (
+    <div className="flex items-center justify-between border-b border-white/[0.05] pb-4 text-sm last:border-none last:pb-0">
+      <span className="text-zinc-600">{label}</span>
+      <span className="font-semibold text-zinc-300">{value}</span>
+    </div>
+  );
+}
+
+type QuickActionProps = {
+  href: string;
+  icon: string;
+  title: string;
+  description: string;
+  pro?: boolean;
+};
+
+function QuickAction({
+  href,
+  icon,
+  title,
+  description,
+  pro = false,
+}: QuickActionProps) {
+  return (
+    <Link
+      href={href}
+      className="group relative rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition duration-300 hover:-translate-y-1 hover:border-purple-500/30 hover:bg-purple-500/[0.04]"
+    >
+      {pro && (
+        <span className="absolute right-5 top-5 rounded-full border border-purple-500/20 bg-purple-500/10 px-2 py-1 text-[9px] font-bold text-purple-300">
+          PRO
+        </span>
+      )}
+
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/10 text-xl text-purple-300 transition group-hover:bg-purple-500/15">
+        {icon}
+      </div>
+
+      <h3 className="mt-5 font-bold">{title}</h3>
+
+      <p className="mt-2 text-sm leading-6 text-zinc-600">
+        {description}
+      </p>
+
+      <p className="mt-5 text-sm font-bold text-purple-400">
+        Open →
+      </p>
+    </Link>
   );
 }
