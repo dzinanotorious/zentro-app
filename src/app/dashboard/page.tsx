@@ -233,7 +233,7 @@ export default function DashboardPage() {
 
       const today = getLocalDateString(new Date());
       const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 6);
       const thirtyDaysAgoString = getLocalDateString(thirtyDaysAgo);
 
       const [
@@ -496,11 +496,11 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen overflow-hidden bg-[#050507] text-white">
       <div className="pointer-events-none fixed inset-0">
-        <div className="absolute left-[15%] top-[-350px] h-[700px] w-[700px] rounded-full bg-purple-700/20 blur-[170px]" />
+        <div className="absolute left-[15%] top-[-350px] h-[700px] w-[700px] rounded-full bg-purple-700/20 blur-[90px]" />
 
-        <div className="absolute -right-72 top-[35%] h-[650px] w-[650px] rounded-full bg-fuchsia-900/10 blur-[170px]" />
+        <div className="absolute -right-72 top-[35%] h-[650px] w-[650px] rounded-full bg-fuchsia-900/10 blur-[90px]" />
 
-        <div className="absolute bottom-[-350px] left-[35%] h-[650px] w-[650px] rounded-full bg-violet-900/10 blur-[170px]" />
+        <div className="absolute bottom-[-350px] left-[35%] h-[650px] w-[650px] rounded-full bg-violet-900/10 blur-[90px]" />
       </div>
 
       <div className="relative flex min-h-screen">
