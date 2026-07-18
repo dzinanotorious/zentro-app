@@ -495,7 +495,7 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#050507] text-white">
-      <div className="pointer-events-none fixed inset-0">
+      <div className="pointer-events-none fixed inset-0 hidden md:block">
         <div className="absolute left-[15%] top-[-350px] h-[700px] w-[700px] rounded-full bg-purple-700/20 blur-[90px]" />
 
         <div className="absolute -right-72 top-[35%] h-[650px] w-[650px] rounded-full bg-fuchsia-900/10 blur-[90px]" />
@@ -561,7 +561,7 @@ export default function DashboardPage() {
           <div className="mt-auto">
             <Link
               href="/pricing"
-              className="group block overflow-hidden rounded-3xl border border-purple-500/25 bg-gradient-to-br from-purple-700/30 via-violet-700/20 to-transparent p-5 transition duration-300 hover:scale-[1.02] hover:border-purple-400/40"
+              className="group block overflow-hidden rounded-3xl border border-purple-500/25 bg-gradient-to-br from-purple-700/30 via-violet-700/20 to-transparent p-5 transition duration-300 md:hover:scale-[1.02] hover:border-purple-400/40"
             >
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/20 text-xl text-purple-300 shadow-[0_0_20px_rgba(139,92,246,0.2)]">
                 ✦
@@ -594,33 +594,35 @@ export default function DashboardPage() {
 
         <div className="w-full lg:pl-72">
           {/* Mobile header */}
-          <header className="sticky top-0 z-20 flex items-center justify-between border-b border-white/[0.06] bg-[#08080c]/90 px-5 py-4 backdrop-blur-xl lg:hidden">
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(true)}
-              aria-label="Open navigation menu"
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-lg text-zinc-300"
-            >
-              ☰
-            </button>
+          <header className="sticky top-0 z-20 border-b border-white/[0.06] bg-[#08080c] px-4 py-4 lg:hidden">
+            <div className="flex items-center justify-between">
+              <div className="min-w-0">
+                <p className="text-xs text-zinc-500">
+                  Good morning 👋
+                </p>
 
-            <Link href="/dashboard" className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/15 font-black text-purple-300">
-                Z
+                <h1 className="truncate text-2xl font-black">
+                  {getFirstName(profile)}
+                </h1>
               </div>
 
-              <span className="font-black tracking-[0.2em]">
-                ZENTRO
-              </span>
-            </Link>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(true)}
+                  className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.03]"
+                >
+                  ☰
+                </button>
 
-            <Link
-              href="/profile"
-              aria-label="Open profile"
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03]"
-            >
-              ○
-            </Link>
+                <Link
+                  href="/profile"
+                  className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-500/15 font-black text-purple-300"
+                >
+                  {getFirstName(profile).charAt(0).toUpperCase()}
+                </Link>
+              </div>
+            </div>
           </header>
 
           {/* Mobile navigation drawer */}
@@ -633,7 +635,7 @@ export default function DashboardPage() {
                 className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm lg:hidden"
               />
 
-              <aside className="fixed inset-y-0 left-0 z-50 flex w-[86%] max-w-[340px] flex-col border-r border-white/[0.08] bg-[#08080c] p-5 shadow-2xl lg:hidden">
+              <aside className="fixed inset-y-0 left-0 z-50 flex h-screen w-[86%] max-w-[340px] flex-col overflow-y-auto border-r border-white/[0.08] bg-[#08080c] p-5 shadow-2xl lg:hidden">
                 <div className="flex items-center justify-between">
                   <Link
                     href="/dashboard"
@@ -662,7 +664,7 @@ export default function DashboardPage() {
                   </button>
                 </div>
 
-                <nav className="mt-8 space-y-2">
+                <nav className="mt-8 flex-1 space-y-2 overflow-y-auto pb-10">
                   {navigation.map((item, index) => {
                     const active = index === 0;
 
@@ -724,7 +726,37 @@ export default function DashboardPage() {
             </>
           )}
 
-          <div className="mx-auto max-w-[1500px] px-5 py-7 sm:px-8 lg:px-10 lg:py-10">
+          
+          <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/[0.08] bg-[#08080c]/95 px-2 py-2 backdrop-blur-lg lg:hidden">
+            <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+              <Link href="/dashboard" className="rounded-xl px-2 py-2 text-center text-[10px] font-bold text-purple-300">
+                <div className="text-lg">⌂</div>
+                Home
+              </Link>
+
+              <Link href="/programs" className="rounded-xl px-2 py-2 text-center text-[10px] text-zinc-500">
+                <div className="text-lg">◈</div>
+                Train
+              </Link>
+
+              <Link href="/nutrition/history" className="rounded-xl px-2 py-2 text-center text-[10px] text-zinc-500">
+                <div className="text-lg">◎</div>
+                Food
+              </Link>
+
+              <Link href="/coach" className="rounded-xl px-2 py-2 text-center text-[10px] text-zinc-500">
+                <div className="text-lg">✦</div>
+                Coach
+              </Link>
+
+              <Link href="/profile" className="rounded-xl px-2 py-2 text-center text-[10px] text-zinc-500">
+                <div className="text-lg">○</div>
+                Profile
+              </Link>
+            </div>
+          </nav>
+
+<div className="mx-auto max-w-[1500px] px-4 py-7 pb-28 sm:px-8 lg:px-10 lg:py-10">
             {/* Top header */}
             <header className="flex flex-col justify-between gap-6 sm:flex-row sm:items-center">
               <div>
@@ -751,7 +783,7 @@ export default function DashboardPage() {
 
                 <Link
                   href="/programs"
-                  className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 py-3 text-sm font-bold shadow-[0_0_30px_rgba(139,92,246,0.2)] transition hover:scale-[1.02]"
+                  className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 py-3 text-sm font-bold shadow-[0_0_30px_rgba(139,92,246,0.2)] transition md:hover:scale-[1.02]"
                 >
                   Start workout
                 </Link>
@@ -760,7 +792,7 @@ export default function DashboardPage() {
 
             {/* Main stats */}
             <section className="mt-9 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-              <article className="group rounded-3xl border border-purple-500/20 bg-gradient-to-br from-purple-600/15 via-purple-950/10 to-transparent p-6 transition hover:-translate-y-1 hover:border-purple-500/35">
+              <article className="group rounded-3xl border border-purple-500/20 bg-gradient-to-br from-purple-600/15 via-purple-950/10 to-transparent p-6 transition md:hover:-translate-y-1 hover:border-purple-500/35">
                 <div className="flex items-center justify-between">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-300">
                     ◎
@@ -799,7 +831,7 @@ export default function DashboardPage() {
                 </p>
               </article>
 
-              <article className="group rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition hover:-translate-y-1 hover:border-purple-500/25">
+              <article className="group rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition md:hover:-translate-y-1 hover:border-purple-500/25">
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-300">
                   ◈
                 </div>
@@ -817,7 +849,7 @@ export default function DashboardPage() {
                 </p>
               </article>
 
-              <article className="group rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition hover:-translate-y-1 hover:border-purple-500/25">
+              <article className="group rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition md:hover:-translate-y-1 hover:border-purple-500/25">
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-fuchsia-500/10 text-fuchsia-300">
                   ↗
                 </div>
@@ -841,7 +873,7 @@ export default function DashboardPage() {
                 </p>
               </article>
 
-              <article className="group rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition hover:-translate-y-1 hover:border-purple-500/25">
+              <article className="group rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition md:hover:-translate-y-1 hover:border-purple-500/25">
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300">
                   ✓
                 </div>
@@ -929,7 +961,7 @@ export default function DashboardPage() {
                   <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                     <Link
                       href="/programs"
-                      className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-7 py-4 text-center text-sm font-bold shadow-[0_0_35px_rgba(139,92,246,0.2)] transition hover:scale-[1.02]"
+                      className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-7 py-4 text-center text-sm font-bold shadow-[0_0_35px_rgba(139,92,246,0.2)] transition md:hover:scale-[1.02]"
                     >
                       Start workout →
                     </Link>
@@ -1262,7 +1294,7 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      <p className="mt-4 text-sm font-bold text-emerald-400 transition group-hover:translate-x-1">
+                      <p className="mt-4 text-sm font-bold text-emerald-400 transition md:group-hover:translate-x-1">
                         View details →
                       </p>
                     </Link>
@@ -1324,7 +1356,7 @@ export default function DashboardPage() {
 
               <Link
                 href="/nutrition/scan"
-                className="group relative overflow-hidden rounded-[32px] border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-[#0b0b10] to-[#0b0b10] p-6 transition hover:-translate-y-1 hover:border-emerald-400/35 sm:p-8"
+                className="group relative overflow-hidden rounded-[32px] border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-[#0b0b10] to-[#0b0b10] p-6 transition md:hover:-translate-y-1 hover:border-emerald-400/35 sm:p-8"
               >
                 <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-emerald-500/10 blur-[70px]" />
 
@@ -1358,7 +1390,7 @@ export default function DashboardPage() {
                         {foodScansRemaining}/2 scans remaining today
                       </span>
 
-                      <span className="text-sm font-bold text-white transition group-hover:translate-x-1">
+                      <span className="text-sm font-bold text-white transition md:group-hover:translate-x-1">
                         Open scanner →
                       </span>
                     </div>
@@ -1614,7 +1646,7 @@ function QuickAction({
   return (
     <Link
       href={href}
-      className="group relative rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition duration-300 hover:-translate-y-1 hover:border-purple-500/30 hover:bg-purple-500/[0.04]"
+      className="group relative rounded-3xl border border-white/[0.07] bg-white/[0.025] p-6 transition duration-300 md:hover:-translate-y-1 hover:border-purple-500/30 hover:bg-purple-500/[0.04]"
     >
       {pro && (
         <span className="absolute right-5 top-5 rounded-full border border-purple-500/20 bg-purple-500/10 px-2 py-1 text-[9px] font-bold text-purple-300">
