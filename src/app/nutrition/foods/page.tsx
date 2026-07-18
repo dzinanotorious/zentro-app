@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 type FoodItem = {
   id: string;
   name: string;
-  category: string;
+  category: string | null;
   image_url: string | null;
   calories: number;
   protein: number;
