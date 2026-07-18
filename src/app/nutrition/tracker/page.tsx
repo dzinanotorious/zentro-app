@@ -265,6 +265,105 @@ export default function NutritionTrackerPage() {
     void loadTracker();
   }, [loadTracker]);
 
+  useEffect(() => {
+    async function importFoodFromLibrary() {
+      if (!userId || loading) return;
+
+      const raw = sessionStorage.getItem("zentro-selected-food");
+
+      if (!raw) return;
+
+      try {
+        const selectedFood = JSON.parse(raw);
+
+        const mealType = "Lunch";
+
+        let mealId: string | null = null;
+
+        const existingMeal = meals.find(
+          (meal) => meal.meal_type === mealType,
+        );
+
+        if (existingMeal) {
+          mealId = existingMeal.id;
+        } else {
+          const { data: createdMeal, error: mealError } =
+            await supabase
+              .from("meals")
+              .insert({
+                user_id: userId,
+                meal_date: selectedDateString,
+                meal_type: mealType,
+                completed: false,
+              })
+              .select("id")
+              .single();
+
+          if (mealError) {
+            console.error(mealError);
+            return;
+          }
+
+          mealId = createdMeal.id;
+        }
+
+        const grams = Number(
+          selectedFood.servingSize ??
+          selectedFood.serving_size ??
+          100,
+        );
+
+        const foodId =
+          selectedFood.id ??
+          selectedFood.food_id;
+
+        if (!foodId || !mealId) {
+          return;
+        }
+
+        const { error: itemError } = await supabase
+          .from("meal_items")
+          .insert({
+            meal_id: mealId,
+            food_id: foodId,
+            serving_size: grams,
+            serving_unit: "g",
+            quantity: grams / 100,
+          });
+
+        if (itemError) {
+          console.error(itemError);
+          return;
+        }
+
+        sessionStorage.removeItem(
+          "zentro-selected-food",
+        );
+
+        await loadTracker();
+
+        setMessageType("success");
+        setMessage(
+          `${selectedFood.name} was added successfully.`,
+        );
+      } catch (error) {
+        console.error(
+          "Food Library import failed:",
+          error,
+        );
+      }
+    }
+
+    void importFoodFromLibrary();
+  }, [
+    userId,
+    loading,
+    meals,
+    loadTracker,
+    selectedDateString,
+  ]);
+
+
   const totals = useMemo<NutritionTotals>(() => {
     return meals.reduce(
       (dayTotals, meal) => {
