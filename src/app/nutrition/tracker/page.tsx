@@ -1,13 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Profile = {
@@ -140,17 +135,11 @@ function calculateMealTotals(meal: Meal | undefined): NutritionTotals {
   return meal.meal_items.reduce(
     (totals, item) => ({
       calories:
-        totals.calories +
-        Number(item.food.calories) * Number(item.quantity),
+        totals.calories + Number(item.food.calories) * Number(item.quantity),
       protein:
-        totals.protein +
-        Number(item.food.protein) * Number(item.quantity),
-      carbs:
-        totals.carbs +
-        Number(item.food.carbs) * Number(item.quantity),
-      fat:
-        totals.fat +
-        Number(item.food.fat) * Number(item.quantity),
+        totals.protein + Number(item.food.protein) * Number(item.quantity),
+      carbs: totals.carbs + Number(item.food.carbs) * Number(item.quantity),
+      fat: totals.fat + Number(item.food.fat) * Number(item.quantity),
     }),
     {
       calories: 0,
@@ -163,6 +152,7 @@ function calculateMealTotals(meal: Meal | undefined): NutritionTotals {
 
 export default function NutritionTrackerPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [userId, setUserId] = useState("");
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -172,12 +162,11 @@ export default function NutritionTrackerPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState<
-    "success" | "error"
-  >("success");
+  const [messageType, setMessageType] = useState<"success" | "error">(
+    "success",
+  );
 
-  const [editingItem, setEditingItem] =
-    useState<EditingItem>(null);
+  const [editingItem, setEditingItem] = useState<EditingItem>(null);
 
   const selectedDateString = getLocalDateString(selectedDate);
   const todayString = getLocalDateString(new Date());
@@ -204,15 +193,14 @@ export default function NutritionTrackerPage() {
     ] = await Promise.all([
       supabase
         .from("profiles")
-        .select(
-          "daily_calories, protein_grams, carbs_grams, fat_grams",
-        )
+        .select("daily_calories, protein_grams, carbs_grams, fat_grams")
         .eq("id", user.id)
         .maybeSingle(),
 
       supabase
         .from("meals")
-        .select(`
+        .select(
+          `
           id,
           name,
           meal_type,
@@ -234,7 +222,8 @@ export default function NutritionTrackerPage() {
               fat
             )
           )
-        `)
+        `,
+        )
         .eq("user_id", user.id)
         .eq("meal_date", selectedDateString)
         .order("created_at", {
@@ -276,28 +265,31 @@ export default function NutritionTrackerPage() {
       try {
         const selectedFood = JSON.parse(raw);
 
-        const mealType = "Lunch";
+        const requestedMealType =
+          selectedFood.mealType ?? searchParams.get("meal") ?? "Lunch";
+
+        const validMealTypes = mealSlots.map((slot) => slot.type);
+        const mealType = validMealTypes.includes(requestedMealType)
+          ? requestedMealType
+          : "Lunch";
 
         let mealId: string | null = null;
 
-        const existingMeal = meals.find(
-          (meal) => meal.meal_type === mealType,
-        );
+        const existingMeal = meals.find((meal) => meal.meal_type === mealType);
 
         if (existingMeal) {
           mealId = existingMeal.id;
         } else {
-          const { data: createdMeal, error: mealError } =
-            await supabase
-              .from("meals")
-              .insert({
-                user_id: userId,
-                meal_date: selectedDateString,
-                meal_type: mealType,
-                completed: false,
-              })
-              .select("id")
-              .single();
+          const { data: createdMeal, error: mealError } = await supabase
+            .from("meals")
+            .insert({
+              user_id: userId,
+              meal_date: selectedDateString,
+              meal_type: mealType,
+              completed: false,
+            })
+            .select("id")
+            .single();
 
           if (mealError) {
             console.error(mealError);
@@ -308,61 +300,41 @@ export default function NutritionTrackerPage() {
         }
 
         const grams = Number(
-          selectedFood.servingSize ??
-          selectedFood.serving_size ??
-          100,
+          selectedFood.servingSize ?? selectedFood.serving_size ?? 100,
         );
 
-        const foodId =
-          selectedFood.id ??
-          selectedFood.food_id;
+        const foodId = selectedFood.id ?? selectedFood.food_id;
 
         if (!foodId || !mealId) {
           return;
         }
 
-        const { error: itemError } = await supabase
-          .from("meal_items")
-          .insert({
-            meal_id: mealId,
-            food_id: foodId,
-            serving_size: grams,
-            serving_unit: "g",
-            quantity: grams / 100,
-          });
+        const { error: itemError } = await supabase.from("meal_items").insert({
+          meal_id: mealId,
+          food_id: foodId,
+          serving_size: grams,
+          serving_unit: "g",
+          quantity: grams / 100,
+        });
 
         if (itemError) {
           console.error(itemError);
           return;
         }
 
-        sessionStorage.removeItem(
-          "zentro-selected-food",
-        );
+        sessionStorage.removeItem("zentro-selected-food");
 
         await loadTracker();
 
         setMessageType("success");
-        setMessage(
-          `${selectedFood.name} was added successfully.`,
-        );
+        setMessage(`${selectedFood.name} was added successfully.`);
       } catch (error) {
-        console.error(
-          "Food Library import failed:",
-          error,
-        );
+        console.error("Food Library import failed:", error);
       }
     }
 
     void importFoodFromLibrary();
-  }, [
-    userId,
-    loading,
-    meals,
-    loadTracker,
-    selectedDateString,
-  ]);
-
+  }, [userId, loading, meals, loadTracker, selectedDateString, searchParams]);
 
   const totals = useMemo<NutritionTotals>(() => {
     return meals.reduce(
@@ -413,22 +385,20 @@ export default function NutritionTrackerPage() {
     if (!userId || loading) return;
 
     const timeout = window.setTimeout(async () => {
-      const { error } = await supabase
-        .from("nutrition_logs")
-        .upsert(
-          {
-            user_id: userId,
-            log_date: selectedDateString,
-            calories: roundedTotals.calories,
-            protein: roundedTotals.protein,
-            carbs: roundedTotals.carbs,
-            fats: roundedTotals.fat,
-            updated_at: new Date().toISOString(),
-          },
-          {
-            onConflict: "user_id,log_date",
-          },
-        );
+      const { error } = await supabase.from("nutrition_logs").upsert(
+        {
+          user_id: userId,
+          log_date: selectedDateString,
+          calories: roundedTotals.calories,
+          protein: roundedTotals.protein,
+          carbs: roundedTotals.carbs,
+          fats: roundedTotals.fat,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "user_id,log_date",
+        },
+      );
 
       if (error) {
         console.error("Nutrition log sync error:", error);
@@ -436,20 +406,13 @@ export default function NutritionTrackerPage() {
     }, 500);
 
     return () => window.clearTimeout(timeout);
-  }, [
-    userId,
-    loading,
-    selectedDateString,
-    roundedTotals,
-  ]);
+  }, [userId, loading, selectedDateString, roundedTotals]);
 
   const caloriesRemaining = Math.round(
     targets.calories - roundedTotals.calories,
   );
 
-  const completedMeals = meals.filter(
-    (meal) => meal.completed,
-  ).length;
+  const completedMeals = meals.filter((meal) => meal.completed).length;
 
   const totalFoodItems = meals.reduce(
     (count, meal) => count + meal.meal_items.length,
@@ -479,9 +442,7 @@ export default function NutritionTrackerPage() {
       .from("meals")
       .update({
         completed,
-        completed_at: completed
-          ? new Date().toISOString()
-          : null,
+        completed_at: completed ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", meal.id);
@@ -556,10 +517,7 @@ export default function NutritionTrackerPage() {
     setSaving(false);
   }
 
-  function startEditing(
-    mealId: string,
-    item: MealItem,
-  ) {
+  function startEditing(mealId: string, item: MealItem) {
     setEditingItem({
       itemId: item.id,
       mealId,
@@ -642,8 +600,8 @@ export default function NutritionTrackerPage() {
             </h1>
 
             <p className="mt-3 max-w-2xl leading-7 text-zinc-500">
-              Manage meals, food quantities and daily macros using
-              real data saved securely in your account.
+              Manage meals, food quantities and daily macros using real data
+              saved securely in your account.
             </p>
           </div>
 
@@ -656,7 +614,7 @@ export default function NutritionTrackerPage() {
             </Link>
 
             <Link
-              href="/nutrition/foods"
+              href="/nutrition/foods?meal=Lunch"
               className="rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 py-3 text-sm font-bold shadow-[0_0_30px_rgba(139,92,246,0.2)] transition hover:scale-[1.02]"
             >
               + Add food
@@ -770,8 +728,7 @@ export default function NutritionTrackerPage() {
           <div className="space-y-5">
             {mealSlots.map((slot) => {
               const meal = meals.find(
-                (currentMeal) =>
-                  currentMeal.meal_type === slot.type,
+                (currentMeal) => currentMeal.meal_type === slot.type,
               );
 
               const mealTotals = calculateMealTotals(meal);
@@ -801,13 +758,10 @@ export default function NutritionTrackerPage() {
 
                         <div>
                           <div className="flex flex-wrap items-center gap-3">
-                            <h2 className="text-2xl font-black">
-                              {slot.type}
-                            </h2>
+                            <h2 className="text-2xl font-black">{slot.type}</h2>
 
                             <span className="text-xs text-zinc-600">
-                              {meal?.planned_time?.slice(0, 5) ??
-                                slot.time}
+                              {meal?.planned_time?.slice(0, 5) ?? slot.time}
                             </span>
 
                             {completed && (
@@ -827,22 +781,18 @@ export default function NutritionTrackerPage() {
                         <button
                           type="button"
                           disabled={saving}
-                          onClick={() =>
-                            void toggleMealCompleted(meal)
-                          }
+                          onClick={() => void toggleMealCompleted(meal)}
                           className={`rounded-2xl px-5 py-3 text-sm font-bold transition disabled:opacity-50 ${
                             completed
                               ? "border border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
                               : "bg-purple-600 text-white hover:bg-purple-500"
                           }`}
                         >
-                          {completed
-                            ? "Mark incomplete"
-                            : "Complete meal"}
+                          {completed ? "Mark incomplete" : "Complete meal"}
                         </button>
                       ) : (
                         <Link
-                          href="/nutrition/foods"
+                          href={`/nutrition/foods?meal=${encodeURIComponent(slot.type)}`}
                           className="rounded-2xl border border-purple-500/20 bg-purple-500/10 px-5 py-3 text-center text-sm font-bold text-purple-300 transition hover:bg-purple-500/15"
                         >
                           + Add food
@@ -857,12 +807,12 @@ export default function NutritionTrackerPage() {
                         </p>
 
                         <p className="mt-2 text-xs text-zinc-700">
-                          Add a food from the Food Library to begin
-                          tracking this meal.
+                          Add a food from the Food Library to begin tracking
+                          this meal.
                         </p>
 
                         <Link
-                          href="/nutrition/foods"
+                          href={`/nutrition/foods?meal=${encodeURIComponent(slot.type)}`}
                           className="mt-5 inline-block text-sm font-bold text-purple-400"
                         >
                           Open Food Library →
@@ -871,8 +821,7 @@ export default function NutritionTrackerPage() {
                     ) : (
                       <div className="mt-7 space-y-3">
                         {meal.meal_items.map((item) => {
-                          const quantity =
-                            Number(item.quantity);
+                          const quantity = Number(item.quantity);
 
                           return (
                             <div
@@ -880,25 +829,19 @@ export default function NutritionTrackerPage() {
                               className="flex flex-col gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 lg:flex-row lg:items-center"
                             >
                               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-purple-500/10 font-black text-purple-300">
-                                {item.food.name
-                                  .charAt(0)
-                                  .toUpperCase()}
+                                {item.food.name.charAt(0).toUpperCase()}
                               </div>
 
                               <div className="min-w-0 flex-1">
-                                <p className="font-bold">
-                                  {item.food.name}
-                                </p>
+                                <p className="font-bold">{item.food.name}</p>
 
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    startEditing(meal.id, item)
-                                  }
+                                  onClick={() => startEditing(meal.id, item)}
                                   className="mt-1 text-left text-xs text-purple-400 transition hover:text-purple-300"
                                 >
-                                  {item.serving_size}{" "}
-                                  {item.serving_unit} · Edit quantity
+                                  {item.serving_size} {item.serving_unit} · Edit
+                                  quantity
                                 </button>
                               </div>
 
@@ -906,32 +849,28 @@ export default function NutritionTrackerPage() {
                                 <MiniStat
                                   label="Kcal"
                                   value={Math.round(
-                                    Number(item.food.calories) *
-                                      quantity,
+                                    Number(item.food.calories) * quantity,
                                   )}
                                 />
 
                                 <MiniStat
                                   label="Protein"
                                   value={`${Math.round(
-                                    Number(item.food.protein) *
-                                      quantity,
+                                    Number(item.food.protein) * quantity,
                                   )}g`}
                                 />
 
                                 <MiniStat
                                   label="Carbs"
                                   value={`${Math.round(
-                                    Number(item.food.carbs) *
-                                      quantity,
+                                    Number(item.food.carbs) * quantity,
                                   )}g`}
                                 />
 
                                 <MiniStat
                                   label="Fats"
                                   value={`${Math.round(
-                                    Number(item.food.fat) *
-                                      quantity,
+                                    Number(item.food.fat) * quantity,
                                   )}g`}
                                 />
                               </div>
@@ -967,23 +906,17 @@ export default function NutritionTrackerPage() {
 
                       <MiniStat
                         label="Protein"
-                        value={`${Math.round(
-                          mealTotals.protein,
-                        )}g`}
+                        value={`${Math.round(mealTotals.protein)}g`}
                       />
 
                       <MiniStat
                         label="Carbs"
-                        value={`${Math.round(
-                          mealTotals.carbs,
-                        )}g`}
+                        value={`${Math.round(mealTotals.carbs)}g`}
                       />
 
                       <MiniStat
                         label="Fats"
-                        value={`${Math.round(
-                          mealTotals.fat,
-                        )}g`}
+                        value={`${Math.round(mealTotals.fat)}g`}
                       />
                     </div>
                   )}
@@ -1003,9 +936,7 @@ export default function NutritionTrackerPage() {
             >
               <p
                 className={`text-sm ${
-                  caloriesRemaining < 0
-                    ? "text-red-300"
-                    : "text-purple-300"
+                  caloriesRemaining < 0 ? "text-red-300" : "text-purple-300"
                 }`}
               >
                 {caloriesRemaining < 0
@@ -1034,53 +965,32 @@ export default function NutritionTrackerPage() {
                   value={`${roundedTotals.calories} kcal`}
                 />
 
-                <MiniStat
-                  label="Target"
-                  value={`${targets.calories} kcal`}
-                />
+                <MiniStat label="Target" value={`${targets.calories} kcal`} />
               </div>
             </article>
 
             <article className="rounded-[34px] border border-white/[0.07] bg-[#0b0b10]/90 p-7">
-              <p className="text-sm text-zinc-500">
-                Daily summary
-              </p>
+              <p className="text-sm text-zinc-500">Daily summary</p>
 
-              <h2 className="mt-2 text-2xl font-black">
-                Your progress
-              </h2>
+              <h2 className="mt-2 text-2xl font-black">Your progress</h2>
 
               <div className="mt-7 space-y-4">
-                <SummaryRow
-                  label="Logged meals"
-                  value={`${meals.length}`}
-                />
+                <SummaryRow label="Logged meals" value={`${meals.length}`} />
 
                 <SummaryRow
                   label="Completed meals"
                   value={`${completedMeals}`}
                 />
 
-                <SummaryRow
-                  label="Food items"
-                  value={`${totalFoodItems}`}
-                />
+                <SummaryRow label="Food items" value={`${totalFoodItems}`} />
 
                 <SummaryRow
                   label="Daily status"
-                  value={
-                    caloriesRemaining >= 0
-                      ? "On track"
-                      : "Over target"
-                  }
+                  value={caloriesRemaining >= 0 ? "On track" : "Over target"}
                   highlight={caloriesRemaining >= 0}
                 />
 
-                <SummaryRow
-                  label="Database sync"
-                  value="Saved"
-                  highlight
-                />
+                <SummaryRow label="Database sync" value="Saved" highlight />
               </div>
             </article>
 
@@ -1089,13 +999,11 @@ export default function NutritionTrackerPage() {
                 ✦
               </div>
 
-              <h2 className="mt-5 text-xl font-black">
-                Quick actions
-              </h2>
+              <h2 className="mt-5 text-xl font-black">Quick actions</h2>
 
               <div className="mt-5 space-y-3">
                 <Link
-                  href="/nutrition/foods"
+                  href="/nutrition/foods?meal=Lunch"
                   className="block rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-5 py-4 text-center text-sm font-bold"
                 >
                   Add another food
@@ -1123,27 +1031,19 @@ export default function NutritionTrackerPage() {
               </p>
 
               <ul className="mt-5 space-y-4 text-sm leading-6 text-zinc-600">
-                <li>
-                  • Food quantities are stored in grams.
-                </li>
-                <li>
-                  • Calories and macros update automatically.
-                </li>
-                <li>
-                  • Each day has a separate nutrition log.
-                </li>
-                <li>
-                  • Completed meals remain saved in Supabase.
-                </li>
+                <li>• Food quantities are stored in grams.</li>
+                <li>• Calories and macros update automatically.</li>
+                <li>• Each day has a separate nutrition log.</li>
+                <li>• Completed meals remain saved in Supabase.</li>
               </ul>
             </article>
           </aside>
         </section>
 
         <footer className="mt-10 border-t border-white/[0.05] py-8 text-xs leading-6 text-zinc-700">
-          Nutrition values are estimates intended for general fitness
-          guidance. Medical conditions and dietary restrictions should
-          be discussed with an appropriate healthcare professional.
+          Nutrition values are estimates intended for general fitness guidance.
+          Medical conditions and dietary restrictions should be discussed with
+          an appropriate healthcare professional.
         </footer>
       </div>
 
@@ -1241,9 +1141,7 @@ function ProgressCard({
   icon: string;
 }) {
   const percentage =
-    target > 0
-      ? Math.min(100, Math.round((value / target) * 100))
-      : 0;
+    target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0;
 
   const overTarget = value > target && target > 0;
 
@@ -1271,10 +1169,7 @@ function ProgressCard({
             overTarget ? "text-red-300" : "text-zinc-600"
           }`}
         >
-          {target > 0
-            ? Math.round((value / target) * 100)
-            : 0}
-          %
+          {target > 0 ? Math.round((value / target) * 100) : 0}%
         </span>
       </div>
 
@@ -1293,17 +1188,9 @@ function ProgressCard({
   );
 }
 
-function ProgressBar({
-  value,
-  target,
-}: {
-  value: number;
-  target: number;
-}) {
+function ProgressBar({ value, target }: { value: number; target: number }) {
   const percentage =
-    target > 0
-      ? Math.min(100, Math.round((value / target) * 100))
-      : 0;
+    target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0;
 
   const overTarget = value > target && target > 0;
 
@@ -1323,20 +1210,12 @@ function ProgressBar({
   );
 }
 
-function MiniStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number;
-}) {
+function MiniStat({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-xl border border-white/[0.05] bg-black/20 p-3">
       <p className="text-[10px] text-zinc-600">{label}</p>
 
-      <p className="mt-1 truncate text-sm font-bold text-zinc-300">
-        {value}
-      </p>
+      <p className="mt-1 truncate text-sm font-bold text-zinc-300">{value}</p>
     </div>
   );
 }

@@ -1,151 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 type FoodItem = {
   id: string;
   name: string;
   category: string;
-  serving: string;
+  image_url: string | null;
   calories: number;
   protein: number;
   carbs: number;
   fat: number;
 };
 
-const FOODS: FoodItem[] = [
-  {
-    id: "chicken-breast",
-    name: "Chicken breast",
-    category: "Protein",
-    serving: "100 g",
-    calories: 165,
-    protein: 31,
-    carbs: 0,
-    fat: 3.6,
-  },
-  {
-    id: "eggs",
-    name: "Eggs",
-    category: "Protein",
-    serving: "2 large",
-    calories: 144,
-    protein: 12.6,
-    carbs: 0.7,
-    fat: 9.5,
-  },
-  {
-    id: "salmon",
-    name: "Salmon",
-    category: "Protein",
-    serving: "100 g",
-    calories: 208,
-    protein: 20,
-    carbs: 0,
-    fat: 13,
-  },
-  {
-    id: "greek-yogurt",
-    name: "Greek yogurt",
-    category: "Dairy",
-    serving: "200 g",
-    calories: 146,
-    protein: 20,
-    carbs: 7.8,
-    fat: 4,
-  },
-  {
-    id: "oats",
-    name: "Oats",
-    category: "Carbs",
-    serving: "50 g",
-    calories: 195,
-    protein: 8.5,
-    carbs: 33,
-    fat: 3.5,
-  },
-  {
-    id: "rice",
-    name: "Cooked rice",
-    category: "Carbs",
-    serving: "150 g",
-    calories: 195,
-    protein: 4,
-    carbs: 42,
-    fat: 0.5,
-  },
-  {
-    id: "wholegrain-bread",
-    name: "Wholegrain bread",
-    category: "Carbs",
-    serving: "2 slices",
-    calories: 180,
-    protein: 8,
-    carbs: 32,
-    fat: 2.5,
-  },
-  {
-    id: "banana",
-    name: "Banana",
-    category: "Fruit",
-    serving: "1 medium",
-    calories: 105,
-    protein: 1.3,
-    carbs: 27,
-    fat: 0.4,
-  },
-  {
-    id: "apple",
-    name: "Apple",
-    category: "Fruit",
-    serving: "1 medium",
-    calories: 95,
-    protein: 0.5,
-    carbs: 25,
-    fat: 0.3,
-  },
-  {
-    id: "avocado",
-    name: "Avocado",
-    category: "Fats",
-    serving: "100 g",
-    calories: 160,
-    protein: 2,
-    carbs: 8.5,
-    fat: 14.7,
-  },
-  {
-    id: "almonds",
-    name: "Almonds",
-    category: "Fats",
-    serving: "30 g",
-    calories: 174,
-    protein: 6.4,
-    carbs: 6.5,
-    fat: 15,
-  },
-  {
-    id: "broccoli",
-    name: "Broccoli",
-    category: "Vegetables",
-    serving: "150 g",
-    calories: 51,
-    protein: 4.2,
-    carbs: 10,
-    fat: 0.6,
-  },
-];
-
 const CATEGORIES = [
   "All",
-  "Protein",
-  "Carbs",
-  "Dairy",
-  "Fruit",
-  "Vegetables",
-  "Fats",
+  "protein",
+  "carbs",
+  "dairy",
+  "fruit",
+  "vegetables",
+  "supplement",
+  "fats",
 ];
 
 function round(value: number) {
@@ -154,26 +33,66 @@ function round(value: number) {
 
 export default function FoodLibraryPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const requestedMeal = searchParams.get("meal") ?? "Lunch";
+  const validMeals = [
+    "Breakfast",
+    "Morning snack",
+    "Lunch",
+    "Pre-workout",
+    "Post-workout",
+    "Dinner",
+    "Evening snack",
+  ];
+  const mealType = validMeals.includes(requestedMeal) ? requestedMeal : "Lunch";
+  const [foods, setFoods] = useState<FoodItem[]>([]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const [selectedFood, setSelectedFood] = useState<FoodItem | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    async function loadFoods() {
+      setLoading(true);
+      setErrorMessage("");
+
+      const { data, error } = await supabase
+        .from("foods")
+        .select("id, name, category, calories, protein, carbs, fat, image_url")
+        .order("name", { ascending: true });
+
+      if (error) {
+        setErrorMessage(error.message);
+        setLoading(false);
+        return;
+      }
+
+      setFoods((data ?? []) as FoodItem[]);
+      setLoading(false);
+    }
+
+    void loadFoods();
+  }, []);
 
   const filteredFoods = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return FOODS.filter((food) => {
+    return foods.filter((food) => {
       const matchesCategory =
-        category === "All" || food.category === category;
+        category === "All" ||
+        food.category?.toLowerCase() === category.toLowerCase();
 
       const matchesSearch =
         normalizedQuery.length === 0 ||
         food.name.toLowerCase().includes(normalizedQuery) ||
-        food.category.toLowerCase().includes(normalizedQuery);
+        (food.category ?? "").toLowerCase().includes(normalizedQuery);
 
       return matchesCategory && matchesSearch;
     });
-  }, [category, query]);
+  }, [category, foods, query]);
 
   function chooseFood(food: FoodItem) {
     setSelectedFood(food);
@@ -185,7 +104,11 @@ export default function FoodLibraryPage() {
 
     const selected = {
       ...selectedFood,
+      food_id: selectedFood.id,
       quantity,
+      servingSize: quantity * 100,
+      serving_size: quantity * 100,
+      mealType,
       totals: {
         calories: round(selectedFood.calories * quantity),
         protein: round(selectedFood.protein * quantity),
@@ -194,17 +117,14 @@ export default function FoodLibraryPage() {
       },
     };
 
-    sessionStorage.setItem(
-      "zentro-selected-food",
-      JSON.stringify(selected),
-    );
+    sessionStorage.setItem("zentro-selected-food", JSON.stringify(selected));
 
-    router.push("/nutrition/tracker");
+    router.push(`/nutrition/tracker?meal=${encodeURIComponent(mealType)}`);
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#050507] px-5 py-8 text-white sm:px-8 lg:py-12">
-      <div className="pointer-events-none fixed inset-0">
+    <main className="min-h-screen overflow-hidden bg-[#050507] px-4 pb-24 pt-6 text-white sm:px-8 lg:py-12">
+      <div className="pointer-events-none fixed inset-0 hidden lg:block">
         <div className="absolute left-[8%] top-[-360px] h-[760px] w-[760px] rounded-full bg-purple-700/20 blur-[180px]" />
         <div className="absolute -right-72 bottom-[-260px] h-[650px] w-[650px] rounded-full bg-violet-900/10 blur-[170px]" />
       </div>
@@ -221,14 +141,14 @@ export default function FoodLibraryPage() {
             </h1>
 
             <p className="mt-4 max-w-2xl leading-7 text-zinc-500">
-              Search common foods, review calories and macros, then
-              continue to your daily nutrition tracker.
+              Choose food for {mealType}. Values are stored per 100 g and saved
+              directly to your nutrition tracker.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-3">
             <Link
-              href="/nutrition/tracker"
+              href={`/nutrition/tracker?meal=${encodeURIComponent(mealType)}`}
               className="rounded-2xl border border-white/[0.08] bg-white/[0.025] px-5 py-3 text-sm font-bold text-zinc-300 transition hover:border-purple-500/25 hover:text-white"
             >
               ← Nutrition tracker
@@ -267,13 +187,25 @@ export default function FoodLibraryPage() {
                     : "border-white/[0.07] bg-white/[0.02] text-zinc-500 hover:text-white"
                 }`}
               >
-                {item}
+                {item === "All"
+                  ? item
+                  : item.charAt(0).toUpperCase() + item.slice(1)}
               </button>
             ))}
           </div>
         </section>
 
-        {filteredFoods.length === 0 ? (
+        {errorMessage && (
+          <section className="mt-6 rounded-2xl border border-red-500/20 bg-red-500/10 p-5 text-sm text-red-200">
+            {errorMessage}
+          </section>
+        )}
+
+        {loading ? (
+          <div className="flex min-h-[300px] items-center justify-center">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+          </div>
+        ) : filteredFoods.length === 0 ? (
           <section className="mt-8 rounded-[30px] border border-dashed border-white/[0.1] bg-white/[0.02] p-10 text-center">
             <h2 className="text-2xl font-black">No foods found</h2>
             <p className="mt-3 text-zinc-500">
@@ -290,14 +222,10 @@ export default function FoodLibraryPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-bold tracking-[0.14em] text-purple-400">
-                      {food.category.toUpperCase()}
+                      {(food.category ?? "Other").toUpperCase()}
                     </p>
-                    <h2 className="mt-2 text-2xl font-black">
-                      {food.name}
-                    </h2>
-                    <p className="mt-2 text-sm text-zinc-600">
-                      {food.serving}
-                    </p>
+                    <h2 className="mt-2 text-2xl font-black">{food.name}</h2>
+                    <p className="mt-2 text-sm text-zinc-600">Per 100 g</p>
                   </div>
 
                   <div className="text-right">
@@ -319,7 +247,7 @@ export default function FoodLibraryPage() {
                   onClick={() => chooseFood(food)}
                   className="mt-6 w-full rounded-2xl border border-purple-500/25 bg-purple-500/10 px-5 py-3 font-bold text-purple-200 transition hover:bg-purple-500/15"
                 >
-                  Add food
+                  Add to {mealType}
                 </button>
               </article>
             ))}
@@ -328,8 +256,8 @@ export default function FoodLibraryPage() {
       </div>
 
       {selectedFood && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-5 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-[30px] border border-white/[0.09] bg-[#0b0b10] p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 p-5">
+          <div className="mx-auto my-auto w-full max-w-md rounded-[30px] border border-white/[0.09] bg-[#0b0b10] p-6 shadow-2xl">
             <div className="flex items-start justify-between gap-5">
               <div>
                 <p className="text-xs font-bold tracking-[0.14em] text-purple-400">
@@ -338,9 +266,7 @@ export default function FoodLibraryPage() {
                 <h2 className="mt-2 text-3xl font-black">
                   {selectedFood.name}
                 </h2>
-                <p className="mt-2 text-sm text-zinc-500">
-                  1 serving = {selectedFood.serving}
-                </p>
+                <p className="mt-2 text-sm text-zinc-500">1 serving = 100 g</p>
               </div>
 
               <button
@@ -353,7 +279,7 @@ export default function FoodLibraryPage() {
             </div>
 
             <label className="mt-7 block text-sm font-bold text-zinc-300">
-              Number of servings
+              Number of 100 g servings
             </label>
 
             <input
@@ -362,9 +288,7 @@ export default function FoodLibraryPage() {
               step="0.25"
               value={quantity}
               onChange={(event) =>
-                setQuantity(
-                  Math.max(0.25, Number(event.target.value) || 1),
-                )
+                setQuantity(Math.max(0.25, Number(event.target.value) || 1))
               }
               className="mt-3 w-full rounded-2xl border border-white/[0.08] bg-[#050507] px-5 py-4 text-white outline-none focus:border-purple-500/40"
             />
@@ -393,7 +317,7 @@ export default function FoodLibraryPage() {
               onClick={continueToTracker}
               className="mt-7 w-full rounded-2xl bg-gradient-to-r from-purple-600 to-violet-500 px-6 py-4 font-bold"
             >
-              Continue to tracker
+              Add food to tracker
             </button>
           </div>
         </div>
@@ -402,13 +326,7 @@ export default function FoodLibraryPage() {
   );
 }
 
-function Macro({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function Macro({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 text-center">
       <p className="text-[10px] text-zinc-600">{label}</p>
@@ -417,13 +335,7 @@ function Macro({
   );
 }
 
-function Total({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function Total({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4">
       <p className="text-xs text-zinc-600">{label}</p>
