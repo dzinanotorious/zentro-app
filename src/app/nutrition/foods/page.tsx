@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -31,7 +31,7 @@ function round(value: number) {
   return Math.round(value * 10) / 10;
 }
 
-export default function FoodLibraryPage() {
+function FoodLibraryContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -325,6 +325,26 @@ export default function FoodLibraryPage() {
     </main>
   );
 }
+
+export default function Page() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-[#050507] text-white">
+          <div className="text-center">
+            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+            <p className="mt-5 text-sm text-zinc-400">
+              Loading food library...
+            </p>
+          </div>
+        </main>
+      }
+    >
+      <FoodLibraryContent />
+    </Suspense>
+  );
+}
+
 
 function Macro({ label, value }: { label: string; value: string }) {
   return (

@@ -150,7 +150,7 @@ function calculateMealTotals(meal: Meal | undefined): NutritionTotals {
   );
 }
 
-export default function NutritionTrackerPage() {
+function NutritionTrackerContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -1126,6 +1126,26 @@ export default function NutritionTrackerPage() {
     </main>
   );
 }
+
+export default function Page() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-[#050507] text-white">
+          <div className="text-center">
+            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+            <p className="mt-5 text-sm text-zinc-400">
+              Loading nutrition tracker...
+            </p>
+          </div>
+        </main>
+      }
+    >
+      <NutritionTrackerContent />
+    </Suspense>
+  );
+}
+
 
 function ProgressCard({
   label,
