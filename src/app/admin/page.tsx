@@ -499,6 +499,20 @@ export default function AdminPage() {
             </button>
 
             <Link
+              href="/admin/community-posts"
+              className="rounded-2xl border border-red-500/20 bg-red-500/10 px-5 py-3 text-sm font-bold text-red-300"
+            >
+              Community Posts
+            </Link>
+
+            <Link
+              href="/admin/community-comments"
+              className="rounded-2xl border border-orange-500/20 bg-orange-500/10 px-5 py-3 text-sm font-bold text-orange-300"
+            >
+              Community Comments
+            </Link>
+
+            <Link
               href="/dashboard"
               className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-5 py-3 text-sm font-bold text-zinc-300"
             >
