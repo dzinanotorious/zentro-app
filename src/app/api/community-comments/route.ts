@@ -54,15 +54,13 @@ export async function GET(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const { user, response } =
-      await requireAdmin(request);
+    const { user, response } = await requireAdmin(request);
 
     if (response || !user) {
       return response;
     }
 
     const body = await request.json();
-
     const commentId = body.commentId;
 
     if (!commentId) {
